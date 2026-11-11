@@ -23,9 +23,9 @@ func (f *failOn) Put(ctx context.Context, e *logical.StorageEntry) error {
 	return f.Storage.Put(ctx, e)
 }
 
-// A crash between run.closing and run.final: the run refuses writes while closing,
-// and a retry writes only run.final, with the head fixed.
-func TestCloseCrashBetweenClosingAndFinal(t *testing.T) {
+// A close whose run.final cannot be written is all-or-nothing: the request's transaction rolls
+// back, so run.closing is not persisted, the run stays open, and a retry writes both records once.
+func TestCloseIsAllOrNothing(t *testing.T) {
 	s := &failOn{Storage: newRig(t).s, needle: `"type":"run.final"`}
 	r := &rig{t: t, e: NewEngine(), s: s}
 	runID, tok := r.register(alice, "r1")
@@ -34,8 +34,13 @@ func TestCloseCrashBetweenClosingAndFinal(t *testing.T) {
 	if m := r.call(alice, closeFrame(runID, tok, "c")); code(m) == "" {
 		t.Fatal("close succeeded although run.final could not be written")
 	}
-	if m := r.call(alice, decideFrame(runID, tok, "d2", "c2")); code(m) == "" {
-		t.Fatalf("decide accepted while the run is closing: %v", m)
+	for _, en := range entriesOf(t, s) {
+		if en.Type == "run.closing" {
+			t.Fatal("run.closing persisted by a close that rolled back")
+		}
+	}
+	if m := r.call(alice, decideFrame(runID, tok, "d2", "c2")); code(m) != "" {
+		t.Fatalf("run not open after the rolled-back close: %v", m)
 	}
 	if m := r.call(alice, closeFrame(runID, tok, "c")); code(m) != "" {
 		t.Fatalf("retry refused: %v", m)

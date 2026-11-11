@@ -303,3 +303,19 @@ The frontier-learning record: what was tried, whether the level's pass rate rose
     L1-L5 engine: frames, runs, atomicity     57/57  1.000
     L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
     L5 export: .tkb (strict zip)               9/9   1.000
+
+## Iteration 24: one transaction per request (step 3a)
+
+- Change: `Serve` runs every record of a request, and so its state, in one storage transaction (`inTx`). A failed commit reloads state from storage on the next call. `ensure()` writes its epoch record through the same helper.
+- Test change: `TestCloseCrashBetweenClosingAndFinal` became `TestCloseIsAllOrNothing`. A close whose `run.final` cannot be written now rolls back, so `run.closing` is not persisted and the run stays open. Previously it asserted the resume behaviour, which no longer exists.
+- Evidence about the dev server (inferred from the gate, not asserted directly): the real-Bao e2e tests pass 10/10 with `ensure()` refusing non-transactional storage, so the storage a plugin gets from `bao server -dev` reports transactions.
+- Not done: the state-key split (`state`, `runs/`, `reqs/`), the 300 s replay window and pruning, and dropping a run's state at `run.final`. Those are steps 3b and 3c. The fork's `BeginTx` (no commit retry, no handling of FDB's 5 s or 10 MB limits) is still unreviewed; step 3 depends on it.
+- Result: frontier exit 0 with the Tracekit environment set:
+    L0 format: JCS                             1/1   1.000
+    L0 format: records                        13/13  1.000
+    L0 format: tree                            5/5   1.000
+    L0 format: checkpoints                    16/16  1.000
+    L1 transport: proxy                       11/11  1.000
+    L1-L5 engine: frames, runs, atomicity     57/57  1.000
+    L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
+    L5 export: .tkb (strict zip)               9/9   1.000

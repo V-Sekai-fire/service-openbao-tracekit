@@ -231,7 +231,10 @@ func (e *Engine) ensure(ctx context.Context, s logical.Storage) error {
 		epoch := spec{run: &runState{tenant: "default", runID: "signer"}, typ: "signer.epoch", source: "signer",
 			data: map[string]any{"keys": []any{map[string]any{
 				"kid": e.signer.KID, "alg": record.Alg, "spki": base64.StdEncoding.EncodeToString(e.signer.SPKI)}}}}
-		if _, err := e.commit(ctx, s, epoch); err != nil {
+		if err := e.inTx(ctx, s, func(tx logical.Transaction) error {
+			_, err := e.commit(ctx, tx, epoch)
+			return err
+		}); err != nil {
 			return err
 		}
 	}
@@ -285,7 +288,7 @@ type spec struct {
 
 // commit signs one record and writes it with a single Put. State changes only
 // after the Put returns, so a failed write changes nothing in memory.
-func (e *Engine) commit(ctx context.Context, s logical.Storage, sp spec) ([]byte, error) {
+func (e *Engine) commit(ctx context.Context, tx logical.Transaction, sp spec) ([]byte, error) {
 	r := sp.run
 	if sp.dataFn != nil {
 		sp.data = sp.dataFn(r)
@@ -328,19 +331,7 @@ func (e *Engine) commit(ctx context.Context, s logical.Storage, sp spec) ([]byte
 	if err != nil {
 		return nil, err
 	}
-	ts, ok := s.(logical.TransactionalStorage)
-	if !ok {
-		return nil, fmt.Errorf("storage does not support transactions")
-	}
-	tx, err := ts.BeginTx(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback(ctx) // a no-op once committed
 	if err := tx.Put(ctx, &logical.StorageEntry{Key: fmt.Sprintf("records/%020d", en.Seq), Value: b}); err != nil {
-		return nil, err
-	}
-	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
 	e.apply(en)
@@ -424,21 +415,45 @@ func (e *Engine) Serve(ctx context.Context, s logical.Storage, id *Identity, fra
 	if rerr != nil {
 		return http.StatusOK, rerr.frame()
 	}
+	// One transaction per request: every record of the request, and so its state, lands
+	// together or not at all. A failure reloads the state from storage on the next call.
 	var resp []byte
-	for i := range sps {
-		sps[i].subject = id.Subject
-		if i == len(sps)-1 {
-			// Only the last record carries the request id and the reply, so a crash between
-			// records is resumed by the retry and never replayed as an answer.
-			sps[i].reqKey, sps[i].payload = key, payload
+	txErr := e.inTx(ctx, s, func(tx logical.Transaction) error {
+		for i := range sps {
+			sps[i].subject = id.Subject
+			if i == len(sps)-1 {
+				sps[i].reqKey, sps[i].payload = key, payload
+			}
+			r, err := e.commit(ctx, tx, sps[i])
+			if err != nil {
+				return err
+			}
+			resp = r
 		}
-		var err error
-		if resp, err = e.commit(ctx, s, sps[i]); err != nil {
-			e.loaded = false // the Put may have landed: reload from the log before the next call
-			return http.StatusOK, errorFrame(CodeUnavailable, "the signer log cannot be read or written")
-		}
+		return nil
+	})
+	if txErr != nil {
+		e.loaded = false
+		return http.StatusOK, errorFrame(CodeUnavailable, "the signer log cannot be read or written")
 	}
 	return http.StatusOK, resp
+}
+
+// inTx runs fn in one storage transaction: it commits if fn returns nil, else rolls back.
+func (e *Engine) inTx(ctx context.Context, s logical.Storage, fn func(logical.Transaction) error) error {
+	ts, ok := s.(logical.TransactionalStorage)
+	if !ok {
+		return fmt.Errorf("storage does not support transactions")
+	}
+	tx, err := ts.BeginTx(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) // a no-op once committed
+	if err := fn(tx); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (e *Engine) register(obj map[string]any, id *Identity) (spec, *rpcErr) {
