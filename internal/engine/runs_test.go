@@ -5,7 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	hclog "github.com/hashicorp/go-hclog"
 	"github.com/openbao/openbao/sdk/v2/logical"
+	"github.com/openbao/openbao/sdk/v2/physical/inmem"
 
 	"github.com/V-Sekai-fire/service-openbao-tracekit/internal/jcs"
 )
@@ -16,8 +18,14 @@ type rig struct {
 	s logical.Storage
 }
 
+// newRig gives the engine storage that supports interactive transactions, as the FDB
+// backend does: the SDK's transactional inmem backend behind logical storage.
 func newRig(t *testing.T) *rig {
-	return &rig{t: t, e: NewEngine(), s: &logical.InmemStorage{}}
+	backend, err := inmem.NewInmem(nil, hclog.NewNullLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &rig{t: t, e: NewEngine(), s: logical.NewLogicalStorage(backend)}
 }
 
 var alice = &Identity{Scheme: "token", Subject: "entity-alice"}
