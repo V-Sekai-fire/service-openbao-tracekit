@@ -180,3 +180,18 @@ The frontier-learning record: what was tried, whether the level's pass rate rose
     L1-L5 engine: frames, runs, atomicity     49/49  1.000
     L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
     L5 export: .tkb (strict zip)               7/7   1.000
+
+## Iteration 16: inclusion proofs and a signed checkpoint note (step f2b)
+
+- Change: `bundle.Note` builds a checkpoint note over (origin, size, root) and signs it with the log key (type 0x01). `bundle.Proofs` builds RFC 6962 inclusion proofs as base64 hashes for chosen indices.
+- Tests: `TestProofsRebuildTheRoot` rebuilds each root from its leaf and proof (RFC 9162 walk). `TestNoteSignatureVerifies` checks the log signature over the note body with the log public key.
+- Not in this step: `trust.json` generation, `proofs/records.json` assembly, and any upstream `verify` run. The bundle is still not verifiable.
+- Result: frontier exit 0 with the Tracekit environment set:
+    L0 format: JCS                             1/1   1.000
+    L0 format: records                        13/13  1.000
+    L0 format: tree                            5/5   1.000
+    L0 format: checkpoints                    16/16  1.000
+    L1 transport: proxy                       11/11  1.000
+    L1-L5 engine: frames, runs, atomicity     49/49  1.000
+    L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
+    L5 export: .tkb (strict zip)               9/9   1.000
