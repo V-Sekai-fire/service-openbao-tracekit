@@ -527,7 +527,7 @@ func (e *Engine) decide(obj map[string]any, id *Identity, pol Policy) ([]spec, *
 		ruleIDs[i] = x
 	}
 	did := "dec-" + e.hex32()
-	attempt := json.Number("1")
+	attempt := json.Number("0") // upstream default; the client never sends attempt
 	if a, ok := obj["attempt"].(json.Number); ok {
 		attempt = a
 	}

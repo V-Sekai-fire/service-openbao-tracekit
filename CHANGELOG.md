@@ -64,3 +64,10 @@ The frontier-learning record: what was tried, whether the level's pass rate rose
 - Result: `go vet ./...` clean. With `TRACEKIT_REF` and `TRACEKIT_PYTHON` set: all levels 100%, L2-L3 10/10, exit 0. With both unset: L2-L3 8/8, `NOT MEASURED` lists `TestRealClient` and `TestRealClientAllow`, exit 1. With `bao` off PATH and the Tracekit environment unset: L2-L3 0/0 `all 4 skipped`, exit 1.
 - Not tested: a failing test through this path (the FAIL line was not exercised); a package that fails to compile (the non-zero `go test` exit path was not exercised).
 - Renumbered: the duplicate `## Iteration 3` heading is now iteration 6 (stored allow policy); this gate is iteration 7.
+
+## Iteration 8: bind attempt to the upstream default
+
+- Problem: `decide` defaulted `attempt` to 1. Upstream defaults it to 0, and the client never sends it.
+- Change: the default is 0 in `internal/engine/runs.go`. A sent `attempt` is still used as-is.
+- Result: `go vet ./...` clean. Frontier with the Tracekit environment set: all levels 100%, L2-L3 10/10, exit 0.
+- Not tested: a decision with `attempt` sent explicitly and a non-zero value through the real client.
