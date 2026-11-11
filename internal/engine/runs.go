@@ -86,6 +86,7 @@ type entry struct {
 	DecisionID string `json:"decision_id,omitempty"`
 	Decision   string `json:"decision,omitempty"`
 	ReqKey     string `json:"req_key,omitempty"`
+	ArgsDigest string `json:"args_digest,omitempty"`
 	Payload    string `json:"payload,omitempty"`
 	Response   string `json:"response,omitempty"`
 }
@@ -99,8 +100,8 @@ type runState struct {
 }
 
 type callState struct {
-	decisionID, decision string
-	done                 bool
+	decisionID, decision, argsDigest string
+	done                             bool
 }
 
 type reqInfo struct{ payload, response string }
@@ -245,7 +246,11 @@ func (e *Engine) apply(en entry) {
 	case "run.final":
 		r.closed = true
 	case "tool.call":
-		r.calls[en.ToolCallID] = &callState{decisionID: en.DecisionID, decision: en.Decision}
+		r.calls[en.ToolCallID] = &callState{argsDigest: en.ArgsDigest}
+	case "policy.decision":
+		if c := r.calls[en.ToolCallID]; c != nil {
+			c.decisionID, c.decision = en.DecisionID, en.Decision
+		}
 	case "tool.result":
 		if c := r.calls[en.ToolCallID]; c != nil {
 			c.done = true
@@ -257,6 +262,7 @@ func (e *Engine) apply(en entry) {
 }
 
 type spec struct {
+	argsDigest               string
 	run                      *runState
 	typ, source              string
 	data, extra              map[string]any
@@ -303,7 +309,7 @@ func (e *Engine) commit(ctx context.Context, s logical.Storage, sp spec) ([]byte
 	}
 	en := entry{Seq: e.nextSeq, Hash: rec["hash"].(string), Record: string(line), Tenant: r.tenant, RunID: r.runID,
 		RunSeq: r.runSeq, Type: sp.typ, Subject: sp.subject, Agent: sp.agent, ToolCallID: sp.toolCallID,
-		DecisionID: sp.decisionID, Decision: sp.decision, ReqKey: sp.reqKey, Payload: sp.payload, Response: string(resp)}
+		DecisionID: sp.decisionID, Decision: sp.decision, ReqKey: sp.reqKey, ArgsDigest: sp.argsDigest, Payload: sp.payload, Response: string(resp)}
 	b, err := json.Marshal(en)
 	if err != nil {
 		return nil, err
@@ -359,26 +365,40 @@ func (e *Engine) Serve(ctx context.Context, s logical.Storage, id *Identity, fra
 		}
 		return http.StatusOK, []byte(ri.response)
 	}
-	var sp spec
+	var sps []spec
 	var rerr *rpcErr
 	switch method {
 	case "register_run":
+		var sp spec
 		sp, rerr = e.register(obj, id)
+		sps = []spec{sp}
 	case "decide":
-		sp, rerr = e.decide(obj, id)
+		sps, rerr = e.decide(obj, id)
 	case "complete":
+		var sp spec
 		sp, rerr = e.complete(obj, id)
+		sps = []spec{sp}
 	case "close_run":
+		var sp spec
 		sp, rerr = e.closeRun(obj, id)
+		sps = []spec{sp}
 	}
 	if rerr != nil {
 		return http.StatusOK, rerr.frame()
 	}
-	sp.reqKey, sp.payload, sp.subject = key, payload, id.Subject
-	resp, err := e.commit(ctx, s, sp)
-	if err != nil {
-		e.loaded = false // the Put may have landed: reload from the log before the next call
-		return http.StatusOK, errorFrame(CodeUnavailable, "the signer log cannot be read or written")
+	var resp []byte
+	for i := range sps {
+		sps[i].subject = id.Subject
+		if i == len(sps)-1 {
+			// Only the last record carries the request id and the reply, so a crash between
+			// records is resumed by the retry and never replayed as an answer.
+			sps[i].reqKey, sps[i].payload = key, payload
+		}
+		var err error
+		if resp, err = e.commit(ctx, s, sps[i]); err != nil {
+			e.loaded = false // the Put may have landed: reload from the log before the next call
+			return http.StatusOK, errorFrame(CodeUnavailable, "the signer log cannot be read or written")
+		}
 	}
 	return http.StatusOK, resp
 }
@@ -419,39 +439,55 @@ func (e *Engine) register(obj map[string]any, id *Identity) (spec, *rpcErr) {
 	}, nil
 }
 
-func (e *Engine) decide(obj map[string]any, id *Identity) (spec, *rpcErr) {
+// commitment is the HMAC of a digest under a per-record salt derived from the log secret.
+func (e *Engine) commitment(label, saltID, digest string) string {
+	k := hmac.New(sha256.New, e.cfg.Secret)
+	fmt.Fprintf(k, "salt:%s:%s", label, saltID)
+	m := hmac.New(sha256.New, k.Sum(nil))
+	m.Write([]byte(digest))
+	return "hmac-sha256:" + hex.EncodeToString(m.Sum(nil))
+}
+
+func (e *Engine) decide(obj map[string]any, id *Identity) ([]spec, *rpcErr) {
 	if err := need(obj, "run_id", "run_token", "stream", "client_seq", "tool_call_id", "tool", "args_source", "args"); err != nil {
-		return spec{}, err
+		return nil, err
 	}
 	r, rerr := e.runFor(obj, id)
 	if rerr != nil {
-		return spec{}, rerr
+		return nil, rerr
 	}
 	if r.closed {
-		return spec{}, &rpcErr{CodeInvalidRequest, "the run is closed"}
+		return nil, &rpcErr{CodeInvalidRequest, "the run is closed"}
 	}
 	callID, ok1 := str(obj, "tool_call_id")
 	tool, ok2 := str(obj, "tool")
 	src, _ := obj["args_source"].(string)
 	if !ok1 || !ok2 || (src != "raw" && src != "parsed" && src != "coerced") {
-		return spec{}, &rpcErr{CodeInvalidRequest, "bad tool_call_id, tool or args_source"}
-	}
-	if _, dup := r.calls[callID]; dup {
-		return spec{}, &rpcErr{CodeConflict, "tool_call_id already decided"}
+		return nil, &rpcErr{CodeInvalidRequest, "bad tool_call_id, tool or args_source"}
 	}
 	var digest string
+	var size int
 	if src == "raw" {
-		s, ok := obj["args"].(string)
+		a, ok := obj["args"].(string)
 		if !ok {
-			return spec{}, &rpcErr{CodeInvalidRequest, "raw args must be a string"}
+			return nil, &rpcErr{CodeInvalidRequest, "raw args must be a string"}
 		}
-		digest = jcs.SHA256Hex([]byte(s))
+		digest, size = jcs.SHA256Hex([]byte(a)), len(a)
 	} else {
-		c, err := jcs.Canonical(obj["args"])
+		cb, err := jcs.Canonical(obj["args"])
 		if err != nil {
-			return spec{}, &rpcErr{CodeInvalidRequest, err.Error()}
+			return nil, &rpcErr{CodeInvalidRequest, err.Error()}
 		}
-		digest = jcs.SHA256Hex(c)
+		digest, size = jcs.SHA256Hex(cb), len(cb)
+	}
+	// A tool.call without its policy.decision is a crash between the two records:
+	// the retry writes only the decision.
+	pending := r.calls[callID]
+	if pending != nil && pending.decisionID != "" {
+		return nil, &rpcErr{CodeConflict, "tool_call_id already decided"}
+	}
+	if pending != nil && pending.argsDigest != digest {
+		return nil, &rpcErr{CodeConflict, "tool_call_id was started with other arguments"}
 	}
 	decision, rules := e.Policy(tool)
 	if decision != "allow" {
@@ -469,15 +505,27 @@ func (e *Engine) decide(obj map[string]any, id *Identity) (spec, *rpcErr) {
 	if a, ok := obj["attempt"].(json.Number); ok {
 		attempt = a
 	}
-	return spec{
-		run: r, typ: "tool.call", source: "sdk", toolCallID: callID, decisionID: did, decision: decision,
-		data: map[string]any{"tool_use_id": callID, "name": tool, "args_digest": digest,
-			"decision": decision, "decision_id": did, "rule_ids": ruleIDs},
-		extra: map[string]any{"args_source": src, "attempt": attempt, "tool_call_id": callID, "tenant_attested": false},
+	extra := map[string]any{"args_source": src, "attempt": attempt, "tool_call_id": callID, "tenant_attested": false}
+	decisionSpec := spec{
+		run: r, typ: "policy.decision", source: "sdk", toolCallID: callID, decisionID: did, decision: decision, argsDigest: digest,
+		data:  map[string]any{"tool_use_id": callID, "decision": decision, "rule_ids": ruleIDs, "tool": tool, "decision_id": did},
+		extra: extra,
 		resp: func(runSeq int) map[string]any {
 			return map[string]any{"decision": decision, "decision_id": did, "rule_ids": ruleIDs, "run_seq": num(runSeq)}
 		},
-	}, nil
+	}
+	if pending != nil {
+		return []spec{decisionSpec}, nil
+	}
+	saltID := e.hex32()
+	callSpec := spec{
+		run: r, typ: "tool.call", source: "sdk", toolCallID: callID, argsDigest: digest,
+		data: map[string]any{"tool_use_id": callID, "name": tool, "salt_id": saltID,
+			"input": map[string]any{"args": map[string]any{
+				"hash": e.commitment("tool.call", saltID, digest), "size": num(size), "redacted": true}}},
+		extra: extra,
+	}
+	return []spec{callSpec, decisionSpec}, nil
 }
 
 func (e *Engine) complete(obj map[string]any, id *Identity) (spec, *rpcErr) {
@@ -496,11 +544,14 @@ func (e *Engine) complete(obj map[string]any, id *Identity) (spec, *rpcErr) {
 	status, _ := obj["status"].(string)
 	digest, _ := str(obj, "args_digest")
 	c := r.calls[callID]
-	if c == nil || c.decisionID != did {
+	if c == nil || c.decisionID == "" || c.decisionID != did {
 		return spec{}, &rpcErr{CodeConflict, "no such decision for this tool_call_id"}
 	}
 	if c.done {
 		return spec{}, &rpcErr{CodeConflict, "tool_call_id already completed"}
+	}
+	if c.argsDigest != digest {
+		return spec{}, &rpcErr{CodeConflict, "args_digest does not match the decision"}
 	}
 	if status != "ok" && status != "error" {
 		return spec{}, &rpcErr{CodeInvalidRequest, "bad status"}
@@ -508,9 +559,22 @@ func (e *Engine) complete(obj map[string]any, id *Identity) (spec, *rpcErr) {
 	if c.decision != "allow" && status == "ok" {
 		return spec{}, &rpcErr{CodeForbidden, "a denied call cannot complete as ok"}
 	}
+	data := map[string]any{"tool_use_id": callID, "ok": status == "ok", "decision_id": did}
+	if res, has := obj["result"]; has {
+		cb, err := jcs.Canonical(res)
+		if err != nil {
+			return spec{}, &rpcErr{CodeInvalidRequest, err.Error()}
+		}
+		saltID := e.hex32()
+		data["salt_id"] = saltID
+		data["output"] = map[string]any{
+			"hash": e.commitment("tool.result", saltID, jcs.SHA256Hex(cb)), "size": num(len(cb)), "redacted": true}
+	} else {
+		data["output"] = map[string]any{"value": nil, "redacted": true}
+	}
 	return spec{
 		run: r, typ: "tool.result", source: "sdk", toolCallID: callID, decisionID: did,
-		data:  map[string]any{"tool_use_id": callID, "status": status, "args_digest": digest, "decision_id": did},
+		data:  data,
 		extra: map[string]any{"tool_call_id": callID, "tenant_attested": false},
 		resp:  func(runSeq int) map[string]any { return map[string]any{"run_seq": num(runSeq)} },
 	}, nil
@@ -527,10 +591,10 @@ func (e *Engine) closeRun(obj map[string]any, id *Identity) (spec, *rpcErr) {
 	if r.closed {
 		return spec{}, &rpcErr{CodeConflict, "the run is already closed"}
 	}
-	reason, _ := obj["reason"].(string)
+	// run.final has no reason field in the v2 schema; the head it names is the last record of the run.
 	return spec{
 		run: r, typ: "run.final", source: "signer",
-		data:  map[string]any{"reason": reason},
+		data:  map[string]any{"head_run_seq": num(r.runSeq - 1), "head_hash": r.head},
 		extra: map[string]any{"tenant_attested": false},
 		resp: func(runSeq int) map[string]any {
 			return map[string]any{"run_id": r.runID, "state": "closing", "run_seq": num(runSeq)}

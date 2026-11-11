@@ -28,3 +28,12 @@ The frontier-learning record: what was tried, whether the level's pass rate rose
 - Change: `Serve` refuses those fields with `forbidden` before it opens the log. Unit test covers all four methods and checks no record is written.
 - Result: L2-L3 e2e 7/7, engine 27/27, no other level dropped. Kept.
 - Not tested: a production login method (userpass is test-only); `identity` as a frame field; records checked against the upstream event schema (`ValidateEvent`, `VerifyRecord`), which is the next regret item and the first thing that would break the `.tkb` export.
+
+## Iteration 4: every record passes the upstream event schema (L4)
+
+- Problem: `TestEveryRecordPassesUpstream` runs register, allow, deny, ok and error completes and close, then checks each stored record with upstream `ValidateEvent` and `VerifyRecord` (Go verifier pinned at `ca403f5`).
+- Before: 0 of 6 record types passed. `run.registered` used identity scheme `bao-entity` (not in the schema enum); `tool.call` carried decision fields and no `input`; `tool.result` had no `ok` or `output`; `run.final` had no `head_run_seq` or `head_hash`.
+- Change: identity scheme is now `token` (subject is the Bao entity id). `decide` writes `tool.call` (arguments as a salted HMAC commitment, never the value) then `policy.decision`. `complete` writes `ok` and a committed or redacted `output`, and checks `args_digest` against the call. `run.final` names the head run_seq and hash and drops `reason`.
+- Atomicity: only the last record of a method carries the request id and reply. A crash between `tool.call` and `policy.decision` is resumed by the retry, which writes only the decision (`TestDecideResumesAfterPartialWrite`).
+- Result: engine 30/30, e2e 7/7, nothing below dropped. Kept.
+- Not tested: the identity string against upstream's RPC `IDENTITY` pattern in a real client run; `run.closing` before `run.final`; `request_id`, `stream` and `client_seq` fields on records; the `.tkb` export; the real v1.4.2 client against decide and complete.

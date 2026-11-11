@@ -132,7 +132,7 @@ func (e *Engine) pathRPC(ctx context.Context, req *logical.Request, d *framework
 	// Identity comes from Bao, never from the frame. A plain token has no entity: refused.
 	var id *Identity
 	if req.EntityID != "" {
-		id = &Identity{Scheme: "bao-entity", Subject: req.EntityID}
+		id = &Identity{Scheme: "token", Subject: req.EntityID}
 	}
 	status, body := e.Serve(ctx, req.Storage, id, frame)
 	return &logical.Response{Data: map[string]interface{}{

@@ -20,8 +20,8 @@ func newRig(t *testing.T) *rig {
 	return &rig{t: t, e: NewEngine(), s: &logical.InmemStorage{}}
 }
 
-var alice = &Identity{Scheme: "bao-entity", Subject: "entity-alice"}
-var bob = &Identity{Scheme: "bao-entity", Subject: "entity-bob"}
+var alice = &Identity{Scheme: "token", Subject: "entity-alice"}
+var bob = &Identity{Scheme: "token", Subject: "entity-bob"}
 
 func (r *rig) call(id *Identity, frame string) map[string]any {
 	r.t.Helper()
@@ -168,8 +168,8 @@ func TestReloadFromLog(t *testing.T) {
 	want := r.e.nextSeq
 	r2 := &rig{t: t, e: NewEngine(), s: r.s}
 	got := r2.call(alice, decideFrame(runID, tok, "d2", "c2"))
-	if code(got) != "" || r2.e.nextSeq != want+1 {
-		t.Fatalf("after reload: %v nextSeq %d want %d", got, r2.e.nextSeq, want+1)
+	if code(got) != "" || r2.e.nextSeq != want+2 {
+		t.Fatalf("after reload: %v nextSeq %d want %d", got, r2.e.nextSeq, want+2)
 	}
 }
 
