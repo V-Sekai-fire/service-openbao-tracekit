@@ -195,3 +195,19 @@ The frontier-learning record: what was tried, whether the level's pass rate rose
     L1-L5 engine: frames, runs, atomicity     49/49  1.000
     L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
     L5 export: .tkb (strict zip)               9/9   1.000
+
+## Iteration 17: run.final head names run.closing; crash between them refuses writes
+
+- Defect (found by test, before the fix): `run.final`'s `head_hash` was the hash of the record before `run.closing`, while `head_run_seq` named `run.closing`. `TestCloseHeadNamesRunClosing` failed with `head_hash sha256:2da4… is not the run.closing hash sha256:863b…`.
+- Fix: `spec` carries `dataFn`, evaluated inside `commit` after the earlier records of the request are applied. `run.final` takes its head from the state then.
+- Defect (reasoned from the code, covered by test): a crash after `run.closing` left the run accepting `decide` and `complete`, because only `run.final` set `closed`. `runState` gains `closing`, set in `apply` on `run.closing`. `decide`, `complete` and `consume` refuse while it is set. A retry after a crash writes only `run.final`.
+- Tests: `TestCloseHeadNamesRunClosing`; `TestCloseCrashBetweenClosingAndFinal` fails the Put of `run.final` once, checks decide is refused while closing, then retries and checks exactly one `run.closing` and one `run.final` with the head fixed.
+- Result: frontier exit 0 with the Tracekit environment set:
+    L0 format: JCS                             1/1   1.000
+    L0 format: records                        13/13  1.000
+    L0 format: tree                            5/5   1.000
+    L0 format: checkpoints                    16/16  1.000
+    L1 transport: proxy                       11/11  1.000
+    L1-L5 engine: frames, runs, atomicity     51/51  1.000
+    L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
+    L5 export: .tkb (strict zip)               9/9   1.000

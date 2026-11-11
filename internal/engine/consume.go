@@ -15,7 +15,7 @@ func (e *Engine) consume(obj map[string]any, id *Identity) (*spec, []byte) {
 	if rerr != nil {
 		return nil, rerr.frame()
 	}
-	if r.closed {
+	if r.closed || r.closing {
 		return nil, (&rpcErr{CodeInvalidRequest, "the run is closed"}).frame()
 	}
 	callID, ok1 := str(obj, "tool_call_id")

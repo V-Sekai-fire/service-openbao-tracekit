@@ -93,6 +93,7 @@ type entry struct {
 }
 
 type runState struct {
+	closing                       bool // run.closing is written: decide, complete and consume refuse
 	tenant, runID, subject, agent string
 	runSeq                        int
 	head                          string
@@ -247,6 +248,8 @@ func (e *Engine) apply(en entry) {
 	switch en.Type {
 	case "run.registered":
 		r.subject, r.agent = en.Subject, en.Agent
+	case "run.closing":
+		r.closing = true
 	case "run.final":
 		r.closed = true
 	case "tool.call":
@@ -266,6 +269,7 @@ func (e *Engine) apply(en entry) {
 }
 
 type spec struct {
+	dataFn                   func(r *runState) map[string]any // evaluated at commit, after the records before it are applied
 	argsDigest               string
 	run                      *runState
 	typ, source              string
@@ -280,6 +284,9 @@ type spec struct {
 // after the Put returns, so a failed write changes nothing in memory.
 func (e *Engine) commit(ctx context.Context, s logical.Storage, sp spec) ([]byte, error) {
 	r := sp.run
+	if sp.dataFn != nil {
+		sp.data = sp.dataFn(r)
+	}
 	prev := e.head
 	if e.nextSeq == 0 {
 		prev = zeroHash
@@ -472,7 +479,7 @@ func (e *Engine) decide(obj map[string]any, id *Identity, pol Policy, policyHash
 	if rerr != nil {
 		return nil, rerr
 	}
-	if r.closed {
+	if r.closed || r.closing {
 		return nil, &rpcErr{CodeInvalidRequest, "the run is closed"}
 	}
 	callID, ok1 := str(obj, "tool_call_id")
@@ -571,7 +578,7 @@ func (e *Engine) complete(obj map[string]any, id *Identity) (spec, *rpcErr) {
 	if rerr != nil {
 		return spec{}, rerr
 	}
-	if r.closed {
+	if r.closed || r.closing {
 		return spec{}, &rpcErr{CodeInvalidRequest, "the run is closed"}
 	}
 	callID, _ := str(obj, "tool_call_id")
@@ -629,20 +636,30 @@ func (e *Engine) closeRun(obj map[string]any, id *Identity) ([]spec, *rpcErr) {
 	if r.closed {
 		return nil, &rpcErr{CodeConflict, "the run is already closed"}
 	}
+	// run.final has no reason field in the v2 schema. Its head is the record before it, which is
+	// run.closing: read at commit time, after run.closing is applied, never before.
+	final := spec{
+		run: r, typ: "run.final", source: "signer",
+		dataFn: func(r *runState) map[string]any {
+			return map[string]any{"head_run_seq": num(r.runSeq - 1), "head_hash": r.head}
+		},
+		extra: map[string]any{"tenant_attested": false},
+		resp: func(runSeq int) map[string]any {
+			return map[string]any{"run_id": r.runID, "state": "closing", "run_seq": num(runSeq)}
+		},
+	}
+	if r.closing {
+		return []spec{final}, nil // run.closing was written before a crash: write only run.final
+	}
+	reason, _ := str(obj, "reason")
+	if reason == "" {
+		reason = "closed"
+	}
 	// run.closing's reason is one of close_run | idle_timeout | quarantine (schema enum).
 	closing := spec{
 		run: r, typ: "run.closing", source: "signer",
 		data:  map[string]any{"reason": "close_run"},
 		extra: map[string]any{"tenant_attested": false},
-	}
-	// run.final has no reason field in the v2 schema; the head it names is the last record of the run.
-	final := spec{
-		run: r, typ: "run.final", source: "signer",
-		data:  map[string]any{"head_run_seq": num(r.runSeq), "head_hash": r.head},
-		extra: map[string]any{"tenant_attested": false},
-		resp: func(runSeq int) map[string]any {
-			return map[string]any{"run_id": r.runID, "state": "closing", "run_seq": num(runSeq)}
-		},
 	}
 	return []spec{closing, final}, nil
 }
