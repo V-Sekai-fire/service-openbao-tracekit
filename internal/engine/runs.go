@@ -171,6 +171,9 @@ func (e *Engine) runFor(obj map[string]any, id *Identity) (*runState, *rpcErr) {
 
 // ensure loads or creates the signer state. Called with the mutex held.
 func (e *Engine) ensure(ctx context.Context, s logical.Storage) error {
+	if _, ok := s.(logical.TransactionalStorage); !ok {
+		return fmt.Errorf("storage does not support transactions: refusing to run without them")
+	}
 	if e.loaded {
 		return nil
 	}
@@ -325,7 +328,19 @@ func (e *Engine) commit(ctx context.Context, s logical.Storage, sp spec) ([]byte
 	if err != nil {
 		return nil, err
 	}
-	if err := s.Put(ctx, &logical.StorageEntry{Key: fmt.Sprintf("records/%020d", en.Seq), Value: b}); err != nil {
+	ts, ok := s.(logical.TransactionalStorage)
+	if !ok {
+		return nil, fmt.Errorf("storage does not support transactions")
+	}
+	tx, err := ts.BeginTx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx) // a no-op once committed
+	if err := tx.Put(ctx, &logical.StorageEntry{Key: fmt.Sprintf("records/%020d", en.Seq), Value: b}); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
 	e.apply(en)

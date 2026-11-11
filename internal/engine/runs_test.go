@@ -198,7 +198,7 @@ func (f *flaky) Put(ctx context.Context, e *logical.StorageEntry) error {
 // A failed write answers unavailable, leaves no gap, and the retry succeeds once.
 func TestFailedWriteLeavesNoGap(t *testing.T) {
 	for failAt := 1; failAt <= 6; failAt++ {
-		f := &flaky{Storage: &logical.InmemStorage{}}
+		f := &flaky{Storage: newRig(t).s}
 		r := &rig{t: t, e: NewEngine(), s: f}
 		f.failAt = failAt
 		frame := `{"method":"register_run","request_id":"r1","agent":"hermes","run_id":"run-1"}`
@@ -234,4 +234,31 @@ func itoa(i int) string {
 		b = append([]byte{byte('0' + i%10)}, b...)
 	}
 	return string(b)
+}
+
+// flaky transactions: a Put inside a transaction counts with the flaky's Puts, so failAt
+// reaches writes made through BeginTx as well.
+func (f *flaky) BeginTx(ctx context.Context) (logical.Transaction, error) {
+	tx, err := f.Storage.(logical.TransactionalStorage).BeginTx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &flakyTx{Transaction: tx, f: f}, nil
+}
+
+func (f *flaky) BeginReadOnlyTx(ctx context.Context) (logical.Transaction, error) {
+	return f.Storage.(logical.TransactionalStorage).BeginReadOnlyTx(ctx)
+}
+
+type flakyTx struct {
+	logical.Transaction
+	f *flaky
+}
+
+func (t *flakyTx) Put(ctx context.Context, e *logical.StorageEntry) error {
+	t.f.puts++
+	if t.f.puts == t.f.failAt {
+		return context.DeadlineExceeded
+	}
+	return t.Transaction.Put(ctx, e)
 }

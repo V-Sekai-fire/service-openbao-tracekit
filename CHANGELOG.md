@@ -288,3 +288,18 @@ The frontier-learning record: what was tried, whether the level's pass rate rose
     L1-L5 engine: frames, runs, atomicity     57/57  1.000
     L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
     L5 export: .tkb (strict zip)               9/9   1.000
+
+## Iteration 23: each commit runs in a transaction (transactions, step 2)
+
+- Change: `commit()` writes its record inside `BeginTx` / `Put` / `Commit`, and applies the in-memory state only after the commit succeeds. `ensure()` refuses storage that is not `logical.TransactionalStorage`, with no fallback to plain Puts.
+- Tests: the `flaky` and `failOn` doubles forward `BeginTx`; their failure counts and needles apply to the Put inside the transaction, so the existing no-gap, resume and crash tests cover the transactional path.
+- Not done in this step: records still go to `records/` (the state split, the outbox and the removal of `records/` are steps 3 to 5); a dedicated Commit-failure test (a double whose Commit fails, asserting nothing changed); an explicit e2e assertion that the dev server reports transactional storage. The fork's `BeginTx` is still unreviewed.
+- Result: frontier exit 0 with the Tracekit environment set:
+    L0 format: JCS                             1/1   1.000
+    L0 format: records                        13/13  1.000
+    L0 format: tree                            5/5   1.000
+    L0 format: checkpoints                    16/16  1.000
+    L1 transport: proxy                       11/11  1.000
+    L1-L5 engine: frames, runs, atomicity     57/57  1.000
+    L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
+    L5 export: .tkb (strict zip)               9/9   1.000
