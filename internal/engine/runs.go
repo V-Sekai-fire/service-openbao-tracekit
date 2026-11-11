@@ -67,9 +67,10 @@ func NewEngine() *Engine {
 }
 
 type initState struct {
-	LogID  string `json:"log_id"`
-	Seed   []byte `json:"seed"`
-	Secret []byte `json:"token_secret"`
+	LogID   string `json:"log_id"`
+	Seed    []byte `json:"seed"`
+	Secret  []byte `json:"token_secret"`
+	LogSeed []byte `json:"log_seed"` // checkpoint log key; separate from the record signer key, never exported
 }
 
 type entry struct {
@@ -178,14 +179,17 @@ func (e *Engine) ensure(ctx context.Context, s logical.Storage) error {
 		return err
 	}
 	if raw == nil {
-		seed, secret := make([]byte, 32), make([]byte, 32)
+		seed, secret, logSeed := make([]byte, 32), make([]byte, 32), make([]byte, 32)
 		if _, err := io.ReadFull(e.Rand, seed); err != nil {
 			return err
 		}
 		if _, err := io.ReadFull(e.Rand, secret); err != nil {
 			return err
 		}
-		cfg := initState{LogID: e.hex32(), Seed: seed, Secret: secret}
+		if _, err := io.ReadFull(e.Rand, logSeed); err != nil {
+			return err
+		}
+		cfg := initState{LogID: e.hex32(), Seed: seed, Secret: secret, LogSeed: logSeed}
 		b, _ := json.Marshal(cfg)
 		if err := s.Put(ctx, &logical.StorageEntry{Key: "init", Value: b}); err != nil {
 			return err
@@ -194,7 +198,7 @@ func (e *Engine) ensure(ctx context.Context, s logical.Storage) error {
 	} else if err := json.Unmarshal(raw.Value, &e.cfg); err != nil {
 		return err
 	}
-	if len(e.cfg.Seed) != ed25519.SeedSize || len(e.cfg.Secret) != 32 || e.cfg.LogID == "" {
+	if len(e.cfg.Seed) != ed25519.SeedSize || len(e.cfg.LogSeed) != ed25519.SeedSize || len(e.cfg.Secret) != 32 || e.cfg.LogID == "" {
 		return fmt.Errorf("init state is malformed")
 	}
 	if e.signer, err = record.NewSigner(ed25519.NewKeyFromSeed(e.cfg.Seed)); err != nil {

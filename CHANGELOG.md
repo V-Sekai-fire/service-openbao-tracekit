@@ -150,3 +150,18 @@ The frontier-learning record: what was tried, whether the level's pass rate rose
     L1-L5 engine: frames, runs, atomicity     48/48  1.000
     L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
     L5 export: .tkb (strict zip)               4/4   1.000
+
+## Iteration 14: separate checkpoint log key
+
+- Change: the init state gains `LogSeed`, a 32-byte Ed25519 seed separate from the record signer seed, generated with the other secrets and never exported. `LogPublicKey()` derives the public key for `trust.json`.
+- Compatibility: an init state stored before this change has no `LogSeed` and now fails closed as malformed. It has to be re-initialised; there is no migration.
+- Test: `TestLogKeyStableAndSeparate` checks the key is 32 bytes, differs from the record signer key, and is unchanged after a reload.
+- Result: frontier exit 0 with the Tracekit environment set:
+    L0 format: JCS                             1/1   1.000
+    L0 format: records                        13/13  1.000
+    L0 format: tree                            5/5   1.000
+    L0 format: checkpoints                    16/16  1.000
+    L1 transport: proxy                       11/11  1.000
+    L1-L5 engine: frames, runs, atomicity     49/49  1.000
+    L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
+    L5 export: .tkb (strict zip)               4/4   1.000
