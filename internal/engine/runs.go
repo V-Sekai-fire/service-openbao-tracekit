@@ -330,6 +330,13 @@ func (e *Engine) Serve(ctx context.Context, s logical.Storage, id *Identity, fra
 	if id == nil || id.Subject == "" {
 		return http.StatusOK, errorFrame(CodeUnauthenticated, "the caller has no entity identity")
 	}
+	// Identity comes from Bao only. This engine has no gateways and no OIDC issuers,
+	// so a frame that names a caller or a principal is refused, never ignored.
+	for _, k := range []string{"caller", "principal", "principal_token"} {
+		if _, has := obj[k]; has {
+			return http.StatusOK, errorFrame(CodeForbidden, k+" is not accepted: identity comes from the transport")
+		}
+	}
 	reqID, ok := str(obj, "request_id")
 	if !ok {
 		return http.StatusOK, errorFrame(CodeInvalidRequest, "missing request_id")

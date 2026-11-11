@@ -25,6 +25,7 @@ var levels = []struct{ name, pkg string }{
 	{"L0 format: checkpoints", "/internal/checkpoint"},
 	{"L1 transport: proxy", "/internal/proxy"},
 	{"L1-L5 engine: frames, runs, atomicity", "/internal/engine"},
+	{"L2-L3 e2e: identity and scope (real Bao)", "/internal/e2e"},
 }
 
 type event struct {

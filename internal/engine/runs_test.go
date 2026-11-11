@@ -71,6 +71,21 @@ func TestNoIdentityIsRefused(t *testing.T) {
 	}
 }
 
+func TestFrameCannotNameItsOwnIdentity(t *testing.T) {
+	r := newRig(t)
+	for _, m := range []string{"register_run", "decide", "complete", "close_run"} {
+		for _, f := range []string{`"caller":"gateway:x"`, `"principal":"person:eve"`, `"principal_token":"abc"`} {
+			got := r.call(alice, `{"method":"`+m+`","request_id":"x",`+f+`}`)
+			if code(got) != CodeForbidden {
+				t.Errorf("%s with %s: %v", m, f, got)
+			}
+		}
+	}
+	if r.e.nextSeq != 0 {
+		t.Error("a refused frame wrote a record")
+	}
+}
+
 func TestDefaultPolicyDeniesEverything(t *testing.T) {
 	r := newRig(t)
 	runID, tok := r.register(alice, "r1")
