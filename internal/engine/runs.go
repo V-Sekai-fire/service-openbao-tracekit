@@ -373,7 +373,11 @@ func (e *Engine) Serve(ctx context.Context, s logical.Storage, id *Identity, fra
 		sp, rerr = e.register(obj, id)
 		sps = []spec{sp}
 	case "decide":
-		sps, rerr = e.decide(obj, id)
+		pol, perr := e.policyFor(ctx, s)
+		if perr != nil {
+			return http.StatusOK, errorFrame(CodeUnavailable, "the signer policy cannot be read")
+		}
+		sps, rerr = e.decide(obj, id, pol)
 	case "complete":
 		var sp spec
 		sp, rerr = e.complete(obj, id)
@@ -448,7 +452,7 @@ func (e *Engine) commitment(label, saltID, digest string) string {
 	return "hmac-sha256:" + hex.EncodeToString(m.Sum(nil))
 }
 
-func (e *Engine) decide(obj map[string]any, id *Identity) ([]spec, *rpcErr) {
+func (e *Engine) decide(obj map[string]any, id *Identity, pol Policy) ([]spec, *rpcErr) {
 	if err := need(obj, "run_id", "run_token", "stream", "client_seq", "tool_call_id", "tool", "args_source", "args"); err != nil {
 		return nil, err
 	}
@@ -505,7 +509,7 @@ func (e *Engine) decide(obj map[string]any, id *Identity) ([]spec, *rpcErr) {
 	if pending != nil && pending.argsDigest != digest {
 		return nil, &rpcErr{CodeConflict, "tool_call_id was started with other arguments"}
 	}
-	decision, rules := e.Policy(tool)
+	decision, rules := pol(tool)
 	if badArgs {
 		decision, rules = "deny", []string{"TK-ARGS-INVALID"}
 	}
