@@ -55,3 +55,12 @@ The frontier-learning record: what was tried, whether the level's pass rate rose
 - Found and fixed by test: stored policies with trailing data, duplicate keys, extra keys, or a non-array `allow` were accepted; they now deny with `TK-POLICY-INVALID`.
 - Kept: yes. Measured with `go run ./cmd/frontier` and the tools interpreter: L1-L5 45/45, L2-L3 real Bao 10/10, real-client allow passes. One earlier frontier run reported `TestRealClientAllow` failing (9/10); it did not reproduce in about 30 repeated runs. Cause not found.
 - Not done: refusal records (`approval.refused`) are not written, so a refused consume leaves no trace in the signed log. `attempt` is not yet bound: local `decide` defaults it to 1 while upstream defaults to 0 and the client never sends it. Policy writes are not in the signed log and decisions carry no `policy_hash`. `approval_request`, `approval_decide`, and `ask` are not implemented.
+
+## Iteration 6: frontier fails closed on missing measurement
+
+- Problem: `go run ./cmd/frontier` could exit 0 when a level was not measured. A skipped test printed `NOT MEASURED` without changing the exit status. A package whose tests all skipped produced no table line. A failing `go test` run was ignored (`_ = cmd.Wait()`).
+- Before: read from the code, not run. With the Tracekit environment unset, the frontier would have exited 0 with L2-L3 at 8/8.
+- Change: each skipped test sets a failure and is listed by name. Every level needs a package that ran tests; otherwise it prints `NOT MEASURED: no tests ran` and fails. A level whose tests all skipped prints `NOT MEASURED: all N skipped` and fails. A non-zero `go test` exit fails the run.
+- Result: `go vet ./...` clean. With `TRACEKIT_REF` and `TRACEKIT_PYTHON` set: all levels 100%, L2-L3 10/10, exit 0. With both unset: L2-L3 8/8, `NOT MEASURED` lists `TestRealClient` and `TestRealClientAllow`, exit 1. With `bao` off PATH and the Tracekit environment unset: L2-L3 0/0 `all 4 skipped`, exit 1.
+- Not tested: a failing test through this path (the FAIL line was not exercised); a package that fails to compile (the non-zero `go test` exit path was not exercised).
+- Not done: the `## Iteration 3` heading appears twice. The second section covers the stored allow policy, `approval_consume` and the real-client allow. Not renumbered here.

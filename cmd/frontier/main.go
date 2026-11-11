@@ -63,7 +63,8 @@ func main() {
 	}
 	pass, total := map[string]int{}, map[string]int{}
 	failed := map[string][]string{}
-	skipped := map[string]int{}
+	skipped := map[string][]string{}
+	seen := map[string]bool{}
 	sc := bufio.NewScanner(out)
 	sc.Buffer(make([]byte, 1<<20), 1<<24)
 	for sc.Scan() {
@@ -71,33 +72,53 @@ func main() {
 		if json.Unmarshal(sc.Bytes(), &ev) != nil || ev.Test == "" {
 			continue
 		}
+		seen[ev.Package] = true
 		switch ev.Action {
 		case "pass":
 			pass[ev.Package]++
 			total[ev.Package]++
 		case "skip":
-			skipped[ev.Package]++
+			skipped[ev.Package] = append(skipped[ev.Package], ev.Test)
 		case "fail":
 			total[ev.Package]++
 			failed[ev.Package] = append(failed[ev.Package], ev.Test)
 		}
 	}
-	_ = cmd.Wait()
-	bad := false
+	waitErr := cmd.Wait()
+	bad := waitErr != nil
+	if waitErr != nil {
+		fmt.Fprintln(os.Stderr, "frontier: go test failed:", waitErr)
+	}
 	for _, l := range levels {
-		for pkg, n := range total {
-			if !strings.HasSuffix(pkg, l.pkg) {
-				continue
+		pkgName := ""
+		for pkg := range seen {
+			if strings.HasSuffix(pkg, l.pkg) {
+				pkgName = pkg
 			}
-			fmt.Printf("%-40s %3d/%-3d %.3f\n", l.name, pass[pkg], n, float64(pass[pkg])/float64(n))
-			if skipped[pkg] > 0 {
-				fmt.Printf("    NOT MEASURED: %d skipped (missing bao, python3 or TRACEKIT_PYTHON)\n", skipped[pkg])
+		}
+		if pkgName == "" {
+			fmt.Printf("%-40s   0/0   NOT MEASURED: no tests ran\n", l.name)
+			bad = true
+			continue
+		}
+		n := total[pkgName]
+		if n == 0 {
+			fmt.Printf("%-40s   0/0   NOT MEASURED: all %d skipped\n", l.name, len(skipped[pkgName]))
+		} else {
+			fmt.Printf("%-40s %3d/%-3d %.3f\n", l.name, pass[pkgName], n, float64(pass[pkgName])/float64(n))
+		}
+		if len(skipped[pkgName]) > 0 {
+			sort.Strings(skipped[pkgName])
+			fmt.Printf("    NOT MEASURED: %d skipped (missing bao, python3 or TRACEKIT_PYTHON):\n", len(skipped[pkgName]))
+			for _, t := range skipped[pkgName] {
+				fmt.Printf("      skip %s\n", t)
 			}
-			sort.Strings(failed[pkg])
-			for _, t := range failed[pkg] {
-				fmt.Printf("    FAIL %s\n", t)
-				bad = true
-			}
+			bad = true
+		}
+		sort.Strings(failed[pkgName])
+		for _, t := range failed[pkgName] {
+			fmt.Printf("    FAIL %s\n", t)
+			bad = true
 		}
 	}
 	if bad {
