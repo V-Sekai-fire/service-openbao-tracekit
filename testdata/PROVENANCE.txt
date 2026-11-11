@@ -1,1 +1,1 @@
-Vectors in this directory are copied from Cygnux-Labs/Tracekit tests/vectors at commit ca403f5 (MIT, Cygnux Labs).
+Vectors in this directory (jcs.jsonl, sig_v2.jsonl, c2sp_checkpoint.json) are copied from Cygnux-Labs/Tracekit tests/vectors at commit ca403f5 (MIT, Cygnux Labs). tests/vectors is identical at tag v1.4.2. c2sp_checkpoint.json holds public upstream test keys only.

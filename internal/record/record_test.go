@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 
 	verifier "github.com/Cygnux-Labs/Tracekit/contrib/independent-go-verifier"
@@ -148,6 +149,24 @@ func TestLeafData(t *testing.T) {
 		t.Fatalf("got %d bytes, err %v", len(d), err)
 	}
 	for _, bad := range []string{"", "sha256:00", "md5:" + hex.EncodeToString(make([]byte, 32)), "sha256:" + "zz" + hex.EncodeToString(make([]byte, 31))} {
+		if _, err := LeafData(bad); err == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+}
+
+// Only canonical lowercase hex is a record hash, as upstream requires.
+func TestLeafDataStrict(t *testing.T) {
+	good := strings.Repeat("ab", 32)
+	if _, err := LeafData("sha256:" + good); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{
+		"sha256:" + strings.ToUpper(good),
+		"sha256: " + good[1:],
+		"sha256:" + good[:63] + "g",
+		" sha256:" + good,
+	} {
 		if _, err := LeafData(bad); err == nil {
 			t.Errorf("accepted %q", bad)
 		}

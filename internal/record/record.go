@@ -94,20 +94,3 @@ func (s *Signer) Sign(event map[string]any) (map[string]any, error) {
 
 // Line is the canonical one-line JSON of a record.
 func Line(rec map[string]any) ([]byte, error) { return jcs.Canonical(rec) }
-
-// LeafData is the Merkle leaf input of a record: the 32 raw bytes of its hash.
-func LeafData(hash string) ([]byte, error) {
-	const p = "sha256:"
-	if len(hash) != len(p)+64 || hash[:len(p)] != p {
-		return nil, errors.New("bad record hash")
-	}
-	out := make([]byte, 32)
-	for i := range out {
-		var b byte
-		if _, err := fmt.Sscanf(hash[len(p)+2*i:len(p)+2*i+2], "%02x", &b); err != nil {
-			return nil, errors.New("bad record hash")
-		}
-		out[i] = b
-	}
-	return out, nil
-}
