@@ -335,3 +335,19 @@ The frontier-learning record: what was tried, whether the level's pass rate rose
     L1-L5 engine: frames, runs, atomicity     58/58  1.000
     L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
     L5 export: .tkb (strict zip)               9/9   1.000
+
+## Iteration 26: real client through a fake Hermes agent (e2e)
+
+- Scope: `internal/e2e/fake_hermes_agent.py` drives the unmodified v1.4.2 client through the Hermes hook surface (`tracekit/integrations/hermes.py`, `hooks()`), with no LLM and no Hermes install. `TestFakeHermesAgent` runs it through the proxy against a dev Bao, with the scoped agent token.
+- Behaviour checked: nine sequential allowed calls (above the in-flight cap of 8); a call off the allow list is blocked; an `approval_consume` for an undecided call is refused; a repeated `request_id` returns an identical reply; a reused `request_id` with another payload returns `conflict`; the run closes; the client warns about nothing.
+- Replay detail: the first attempt sent two `decide` calls that were not byte-identical, because the client assigns a fresh `client_seq` per event call. The retry now uses its own run with a pinned stream and `client_seq`, which matches a connection-loss retry. This was a test bug, not an engine finding.
+- Not covered, on purpose: export and `tracekit verify --trust` (this moves to the operator tool in step 4); tamper; concurrent agents. Dev-server storage is in-memory, so commit conflicts on FDB are not exercised.
+- Result: frontier exit 0 with the Tracekit environment set:
+    L0 format: JCS                             1/1   1.000
+    L0 format: records                        13/13  1.000
+    L0 format: tree                            5/5   1.000
+    L0 format: checkpoints                    16/16  1.000
+    L1 transport: proxy                       11/11  1.000
+    L1-L5 engine: frames, runs, atomicity     58/58  1.000
+    L2-L3 e2e: identity and scope (real Bao)  11/11  1.000
+    L5 export: .tkb (strict zip)               9/9   1.000
