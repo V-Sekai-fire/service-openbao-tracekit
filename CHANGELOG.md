@@ -165,3 +165,18 @@ The frontier-learning record: what was tried, whether the level's pass rate rose
     L1-L5 engine: frames, runs, atomicity     49/49  1.000
     L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
     L5 export: .tkb (strict zip)               4/4   1.000
+
+## Iteration 15: bundle assembly without proofs (step f2a)
+
+- Change: `internal/bundle.Assemble` builds `runs/<id>.jsonl` (id = first 32 hex of SHA-256 of `tenant/run_id`), `keys/records.jsonl` and `manifest.json` (format, verifier_min_version, files as bare sha256 hex). Lines are used verbatim and checked against the 256 B to 1 MiB bounds, and must not contain a newline.
+- Not in this step: `proofs/records.json`, `checkpoints/<size>.note`, `trust.json`, and any upstream verify run. The output is not a verifiable bundle yet; the golden bundle's verifier acceptance is still open.
+- Tests: manifest lists every file with the right hash; run lines are verbatim; short and newline-bearing lines are refused; run file names are shaped and distinct.
+- Result: frontier exit 0 with the Tracekit environment set:
+    L0 format: JCS                             1/1   1.000
+    L0 format: records                        13/13  1.000
+    L0 format: tree                            5/5   1.000
+    L0 format: checkpoints                    16/16  1.000
+    L1 transport: proxy                       11/11  1.000
+    L1-L5 engine: frames, runs, atomicity     49/49  1.000
+    L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
+    L5 export: .tkb (strict zip)               7/7   1.000
