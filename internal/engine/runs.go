@@ -391,9 +391,7 @@ func (e *Engine) Serve(ctx context.Context, s logical.Storage, id *Identity, fra
 		sp, rerr = e.complete(obj, id)
 		sps = []spec{sp}
 	case "close_run":
-		var sp spec
-		sp, rerr = e.closeRun(obj, id)
-		sps = []spec{sp}
+		sps, rerr = e.closeRun(obj, id)
 	case "approval_consume":
 		sps = []spec{*consumeRec}
 	}
@@ -613,24 +611,34 @@ func (e *Engine) complete(obj map[string]any, id *Identity) (spec, *rpcErr) {
 	}, nil
 }
 
-func (e *Engine) closeRun(obj map[string]any, id *Identity) (spec, *rpcErr) {
+// closeRun writes run.closing, then run.final, back to back, as upstream orders them.
+// The grace window upstream waits for late records is 0 here: the verifier and the CLI
+// wait for run.final, not for a timer, so the two records need no gap between them.
+func (e *Engine) closeRun(obj map[string]any, id *Identity) ([]spec, *rpcErr) {
 	if err := need(obj, "run_id", "run_token"); err != nil {
-		return spec{}, err
+		return nil, err
 	}
 	r, rerr := e.runFor(obj, id)
 	if rerr != nil {
-		return spec{}, rerr
+		return nil, rerr
 	}
 	if r.closed {
-		return spec{}, &rpcErr{CodeConflict, "the run is already closed"}
+		return nil, &rpcErr{CodeConflict, "the run is already closed"}
+	}
+	// run.closing's reason is one of close_run | idle_timeout | quarantine (schema enum).
+	closing := spec{
+		run: r, typ: "run.closing", source: "signer",
+		data:  map[string]any{"reason": "close_run"},
+		extra: map[string]any{"tenant_attested": false},
 	}
 	// run.final has no reason field in the v2 schema; the head it names is the last record of the run.
-	return spec{
+	final := spec{
 		run: r, typ: "run.final", source: "signer",
-		data:  map[string]any{"head_run_seq": num(r.runSeq - 1), "head_hash": r.head},
+		data:  map[string]any{"head_run_seq": num(r.runSeq), "head_hash": r.head},
 		extra: map[string]any{"tenant_attested": false},
 		resp: func(runSeq int) map[string]any {
 			return map[string]any{"run_id": r.runID, "state": "closing", "run_seq": num(runSeq)}
 		},
-	}, nil
+	}
+	return []spec{closing, final}, nil
 }

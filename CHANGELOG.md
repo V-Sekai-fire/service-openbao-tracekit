@@ -86,3 +86,19 @@ The frontier-learning record: what was tried, whether the level's pass rate rose
     L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
 - Not tested: upstream schema and signature checks for `approval.refused` (not yet in `TestEveryRecordPassesUpstream`).
 - Flaky check: `TestRealClientAllow` with `-race -count=50` passed (0 failures, 99 s). The single 9/10 from iteration 6 did not reproduce; parked.
+
+## Iteration 10: run.closing before run.final
+
+- Problem: `close_run` wrote only `run.final`. Upstream writes `run.closing` first, then `run.final`.
+- Before: `TestCloseWritesClosingBeforeFinal` failed with `[signer.epoch run.registered run.final]`.
+- Change: `closeRun` returns `[run.closing, run.final]`, written back to back. `run.closing.reason` is always `close_run`: the schema enum is `close_run | idle_timeout | quarantine`, and a free-text reason failed `TestEveryRecordPassesUpstream`. The reply still rides on `run.final`.
+- Grace: upstream waits `grace_s` (5 s) for late records. Here the gap is 0. The upstream verifier and CLI wait for `run.final`, not a timer, so back-to-back is compatible. Late `complete` calls after close are still refused, as before.
+- Not tested: a crash between the two writes. A retry then sees `run.closing` on the log but not `run.final`, and writes a second `run.closing`. Needs a guard on `runState`; not done here.
+- Result: frontier exit 0 with the Tracekit environment set:
+    L0 format: JCS                             1/1   1.000
+    L0 format: records                        13/13  1.000
+    L0 format: tree                            5/5   1.000
+    L0 format: checkpoints                    16/16  1.000
+    L1 transport: proxy                       11/11  1.000
+    L1-L5 engine: frames, runs, atomicity     47/47  1.000
+    L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
