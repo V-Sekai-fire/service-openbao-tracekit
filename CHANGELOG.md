@@ -117,3 +117,22 @@ The frontier-learning record: what was tried, whether the level's pass rate rose
     L1 transport: proxy                       11/11  1.000
     L1-L5 engine: frames, runs, atomicity     48/48  1.000
     L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
+
+## Iteration 12: strict zip writer for .tkb bundles (step f1)
+
+- Step 0, read-only, from the code: `env -u PYTHONHOME PYTHONPATH=<ref> python -m tracekit verify tests/golden/v2/closed.tkb --trust tests/golden/v2/trust.json` exits 0 and prints `Integrity: VERIFIED.` That is the acceptance line.
+- Policies: `verify/v2.py` checks a policy snapshot only for a decision an agent was asked to approve. A missing snapshot is an `unchecked` note, not a failure (around line 870). An empty `policies/` is therefore accepted for runs with no asked decision. No snapshot format was invented.
+- Trust: `logs` and `algs` are required and non-empty. `witnesses` and `witnesses_required` are optional; the golden trust uses one witness.
+- Zip metadata of the golden bundles: method 8 (deflate), flags 0, fixed DOS timestamp 2026-10-10 05:49:22, manifest not sorted by name. This writer uses method 0 (stored, allowed by section 9) with the same fixed timestamp. Name order is not mirrored and was not checked against the verifier.
+- Change: `internal/bundle.Write` is a hand-rolled zip writer: stored entries, flags 0, no extra field, no comment, no zip64. It checks names (the section 9 pattern, no `.` or `..` segment), duplicates, the 10,000-entry, 64 MiB per entry and 512 MiB total limits. `archive/zip` was not used because its `Create` sets a data descriptor and a modified-time extra field.
+- Frontier: `L5 export: .tkb (strict zip)` row added, so the package cannot go silently unmeasured.
+- Not done: no bundle is built from the engine yet (f2), and no bundle has been run through upstream `verify` yet. This step proves the zip layout in Go only.
+- Result: frontier exit 0 with the Tracekit environment set:
+    L0 format: JCS                             1/1   1.000
+    L0 format: records                        13/13  1.000
+    L0 format: tree                            5/5   1.000
+    L0 format: checkpoints                    16/16  1.000
+    L1 transport: proxy                       11/11  1.000
+    L1-L5 engine: frames, runs, atomicity     48/48  1.000
+    L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
+    L5 export: .tkb (strict zip)               4/4   1.000
