@@ -63,6 +63,7 @@ func main() {
 	}
 	pass, total := map[string]int{}, map[string]int{}
 	failed := map[string][]string{}
+	skipped := map[string]int{}
 	sc := bufio.NewScanner(out)
 	sc.Buffer(make([]byte, 1<<20), 1<<24)
 	for sc.Scan() {
@@ -74,6 +75,8 @@ func main() {
 		case "pass":
 			pass[ev.Package]++
 			total[ev.Package]++
+		case "skip":
+			skipped[ev.Package]++
 		case "fail":
 			total[ev.Package]++
 			failed[ev.Package] = append(failed[ev.Package], ev.Test)
@@ -87,6 +90,9 @@ func main() {
 				continue
 			}
 			fmt.Printf("%-40s %3d/%-3d %.3f\n", l.name, pass[pkg], n, float64(pass[pkg])/float64(n))
+			if skipped[pkg] > 0 {
+				fmt.Printf("    NOT MEASURED: %d skipped (missing bao, python3 or TRACEKIT_PYTHON)\n", skipped[pkg])
+			}
 			sort.Strings(failed[pkg])
 			for _, t := range failed[pkg] {
 				fmt.Printf("    FAIL %s\n", t)

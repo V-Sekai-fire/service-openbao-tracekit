@@ -27,7 +27,7 @@ func TestEveryRecordPassesUpstream(t *testing.T) {
 	if allow["decision"] != "allow" || deny["decision"] != "deny" {
 		t.Fatalf("setup: %v %v", allow, deny)
 	}
-	digest := jcs.SHA256Hex([]byte("{}"))
+	digest := argsDigest(t, "bash", "{}")
 	done := r.call(alice, `{"method":"complete","request_id":"k1","run_id":"`+runID+`","run_token":"`+tok+
 		`","stream":"s","client_seq":2,"tool_call_id":"c1","decision_id":"`+allow["decision_id"].(string)+
 		`","args_digest":"`+digest+`","status":"ok"}`)
@@ -36,7 +36,7 @@ func TestEveryRecordPassesUpstream(t *testing.T) {
 	}
 	failed := r.call(alice, `{"method":"complete","request_id":"k2","run_id":"`+runID+`","run_token":"`+tok+
 		`","stream":"s","client_seq":3,"tool_call_id":"c2","decision_id":"`+deny["decision_id"].(string)+
-		`","args_digest":"`+jcs.SHA256Hex([]byte(`{"p":"/"}`))+`","status":"error"}`)
+		`","args_digest":"`+argsDigest(t, "rm", `{"p":"/"}`)+`","status":"error"}`)
 	if code(failed) != "" {
 		t.Fatalf("error complete refused: %v", failed)
 	}
@@ -71,4 +71,18 @@ func TestEveryRecordPassesUpstream(t *testing.T) {
 			t.Errorf("%s (%s): verify: %v", k, en.Type, err)
 		}
 	}
+}
+
+// argsDigest is what the Tracekit client computes: sha256(JCS({"tool", "args"})).
+func argsDigest(t *testing.T, tool, args string) string {
+	t.Helper()
+	v, err := jcs.Parse([]byte(args))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := jcs.Canonical(map[string]any{"tool": tool, "args": v})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return jcs.SHA256Hex(b)
 }

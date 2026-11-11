@@ -465,20 +465,36 @@ func (e *Engine) decide(obj map[string]any, id *Identity) ([]spec, *rpcErr) {
 	if !ok1 || !ok2 || (src != "raw" && src != "parsed" && src != "coerced") {
 		return nil, &rpcErr{CodeInvalidRequest, "bad tool_call_id, tool or args_source"}
 	}
+	// The client binds complete to sha256(JCS({"tool", "args"})) with args strictly parsed,
+	// whatever args_source says, so the engine computes the same digest. Raw args that do
+	// not parse strictly are denied (TK-ARGS-INVALID) and bound by the hash of their text.
 	var digest string
 	var size int
+	badArgs := false
+	var argv any
 	if src == "raw" {
 		a, ok := obj["args"].(string)
 		if !ok {
 			return nil, &rpcErr{CodeInvalidRequest, "raw args must be a string"}
 		}
-		digest, size = jcs.SHA256Hex([]byte(a)), len(a)
+		size = len(a)
+		if v, err := jcs.Parse([]byte(a)); err != nil {
+			badArgs, digest = true, jcs.SHA256Hex([]byte(a))
+		} else {
+			argv = v
+		}
 	} else {
-		cb, err := jcs.Canonical(obj["args"])
+		argv = obj["args"]
+	}
+	if !badArgs {
+		cb, err := jcs.Canonical(map[string]any{"tool": tool, "args": argv})
 		if err != nil {
 			return nil, &rpcErr{CodeInvalidRequest, err.Error()}
 		}
-		digest, size = jcs.SHA256Hex(cb), len(cb)
+		digest = jcs.SHA256Hex(cb)
+		if src != "raw" {
+			size = len(cb)
+		}
 	}
 	// A tool.call without its policy.decision is a crash between the two records:
 	// the retry writes only the decision.
@@ -490,6 +506,9 @@ func (e *Engine) decide(obj map[string]any, id *Identity) ([]spec, *rpcErr) {
 		return nil, &rpcErr{CodeConflict, "tool_call_id was started with other arguments"}
 	}
 	decision, rules := e.Policy(tool)
+	if badArgs {
+		decision, rules = "deny", []string{"TK-ARGS-INVALID"}
+	}
 	if decision != "allow" {
 		decision = "deny" // fail closed: ask and anything unknown are not an allow
 		if len(rules) == 0 {

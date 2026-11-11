@@ -37,3 +37,11 @@ The frontier-learning record: what was tried, whether the level's pass rate rose
 - Atomicity: only the last record of a method carries the request id and reply. A crash between `tool.call` and `policy.decision` is resumed by the retry, which writes only the decision (`TestDecideResumesAfterPartialWrite`).
 - Result: engine 30/30, e2e 7/7, nothing below dropped. Kept.
 - Not tested: the identity string against upstream's RPC `IDENTITY` pattern in a real client run; `run.closing` before `run.final`; `request_id`, `stream` and `client_seq` fields on records; the `.tkb` export; the real v1.4.2 client against decide and complete.
+
+## Iteration 5: the real v1.4.2 client through the proxy and real Bao (L4)
+
+- Problem: `TestRealClient` runs the unmodified v1.4.2 Python client from a checkout (no install) against the proxy and a dev Bao: `hello`, `register_run`, `decide`, `complete`, `close_run`. It needs a Python that imports `rfc8785` (`TRACEKIT_PYTHON`); it skips otherwise, and the harness now reports skips as "not measured".
+- Before: `decide` worked, but `complete` failed with `conflict: args_digest does not match the decision`. The engine hashed the raw args string; the client binds to `sha256(JCS({"tool","args"}))` with args strictly parsed, whatever `args_source` is. Every allowed call would have failed to complete.
+- Change: the engine computes the client's digest. Raw args that do not parse strictly are denied as `TK-ARGS-INVALID` and bound by the hash of their text.
+- Result: engine 30/30, e2e 8/8, nothing below dropped. Kept.
+- Not tested: an allow decision against the real client (the default policy denies everything), `ask` and `approval_consume`, which the Hermes hook calls; `run.closing`; the `.tkb` export.
