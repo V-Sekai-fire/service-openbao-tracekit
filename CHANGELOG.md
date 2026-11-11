@@ -228,3 +228,17 @@ The frontier-learning record: what was tried, whether the level's pass rate rose
     L1-L5 engine: frames, runs, atomicity     52/52  1.000
     L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
     L5 export: .tkb (strict zip)               9/9   1.000
+
+## Iteration 19: a non-zero attempt is carried on the decision
+
+- Measured: `decide` with `attempt: 2` writes a `policy.decision` whose `attempt` is 2. `TestNonZeroAttemptIsCarried`.
+- Note: the first run of this test failed on a comparison in the test itself (the value was 2, my type assertion was wrong), not in the engine. The comparison now uses the printed value.
+- Result: frontier exit 0 with the Tracekit environment set:
+    L0 format: JCS                             1/1   1.000
+    L0 format: records                        13/13  1.000
+    L0 format: tree                            5/5   1.000
+    L0 format: checkpoints                    16/16  1.000
+    L1 transport: proxy                       11/11  1.000
+    L1-L5 engine: frames, runs, atomicity     53/53  1.000
+    L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
+    L5 export: .tkb (strict zip)               9/9   1.000
