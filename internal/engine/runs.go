@@ -353,8 +353,13 @@ func (e *Engine) Serve(ctx context.Context, s logical.Storage, id *Identity, fra
 		e.loaded = false
 		return http.StatusOK, errorFrame(CodeUnavailable, "the signer log cannot be read or written")
 	}
+	var consumeRec *spec
 	if method == "approval_consume" {
-		return http.StatusOK, e.consume(obj, id)
+		sp, resp := e.consume(obj, id)
+		if sp == nil {
+			return http.StatusOK, resp // allowed: answered, writes no record
+		}
+		consumeRec = sp // refused: recorded and replayed through the request_id cache
 	}
 	canon, err := jcs.Canonical(obj)
 	if err != nil {
@@ -389,6 +394,8 @@ func (e *Engine) Serve(ctx context.Context, s logical.Storage, id *Identity, fra
 		var sp spec
 		sp, rerr = e.closeRun(obj, id)
 		sps = []spec{sp}
+	case "approval_consume":
+		sps = []spec{*consumeRec}
 	}
 	if rerr != nil {
 		return http.StatusOK, rerr.frame()

@@ -71,3 +71,18 @@ The frontier-learning record: what was tried, whether the level's pass rate rose
 - Change: the default is 0 in `internal/engine/runs.go`. A sent `attempt` is still used as-is.
 - Result: `go vet ./...` clean. Frontier with the Tracekit environment set: all levels 100%, L2-L3 10/10, exit 0.
 - Not tested: a decision with `attempt` sent explicitly and a non-zero value through the real client.
+
+## Iteration 9: approval.refused records
+
+- Reverses iteration 6 for refusals: a refused `approval_consume` now writes one signed `approval.refused` record (`{tool_use_id, rule_ids, reason}`, source `signer`), committed through the request_id cache. A retry with the same request_id writes nothing and gets the original answer; a new request_id writes a second record. Allowed calls still write nothing.
+- Correction: the iteration 6 claim "consume writes nothing" was never measured. `countKeys` lists top-level names, so `records/` counted as one entry and `TestConsumeWritesNothing` passed for any number of writes. It now counts `records/` entries (`countRecords`).
+- Result: frontier exit 0 with the Tracekit environment set:
+    L0 format: JCS                             1/1   1.000
+    L0 format: records                        13/13  1.000
+    L0 format: tree                            5/5   1.000
+    L0 format: checkpoints                    16/16  1.000
+    L1 transport: proxy                       11/11  1.000
+    L1-L5 engine: frames, runs, atomicity     46/46  1.000
+    L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
+- Not tested: upstream schema and signature checks for `approval.refused` (not yet in `TestEveryRecordPassesUpstream`).
+- Flaky check: `TestRealClientAllow` with `-race -count=50` passed (0 failures, 99 s). The single 9/10 from iteration 6 did not reproduce; parked.

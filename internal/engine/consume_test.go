@@ -92,10 +92,10 @@ func TestConsumeWritesNothing(t *testing.T) {
 	allowBash(r)
 	runID, tok := r.register(alice, "r1")
 	r.call(alice, decideFrame(runID, tok, "d1", "c1"))
-	before := countKeys(t, r.s)
+	before := countRecords(t, r.s)
 	a := r.call(alice, consumeFrame(runID, tok, "c1", "bash", "{}"))
 	b := r.call(alice, consumeFrame(runID, tok, "c1", "bash", "{}"))
-	if after := countKeys(t, r.s); after != before {
+	if after := countRecords(t, r.s); after != before {
 		t.Fatalf("consume wrote %d records", after-before)
 	}
 	if a["ok"] != true || b["ok"] != true {
