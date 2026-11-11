@@ -6,7 +6,8 @@
 // closed: anything the engine cannot answer becomes an error frame or a non-200,
 // never an allow-shaped body.
 //
-// Skeleton: only "hello" is implemented. Identity is a stub.
+// Implemented: hello (stateless), register_run, decide, complete, close_run.
+// The default policy denies every tool call. Identity is the Bao entity ID.
 package engine
 
 import (
@@ -35,35 +36,45 @@ const (
 const (
 	CodeInvalidRequest = "invalid_request"
 	CodeQuotaExceeded  = "quota_exceeded"
+	CodeForbidden      = "forbidden"
 )
 
-// Handle answers one frame. It returns the HTTP status and the exact reply bytes.
-// Per upstream, RPC refusals are status 200 with an error frame; an oversize
-// frame is 413.
-func Handle(frame string) (int, []byte) {
+// parseFrame strictly parses a frame. On failure obj is nil and body is the reply.
+func parseFrame(frame string) (int, map[string]any, []byte) {
 	if len(frame) > MaxLine {
-		return http.StatusRequestEntityTooLarge, errorFrame(CodeQuotaExceeded,
+		return http.StatusRequestEntityTooLarge, nil, errorFrame(CodeQuotaExceeded,
 			fmt.Sprintf("body longer than %d bytes", MaxLine))
 	}
 	v, err := jcs.Parse([]byte(frame))
 	if err != nil {
-		return http.StatusOK, errorFrame(CodeInvalidRequest, err.Error())
+		return http.StatusOK, nil, errorFrame(CodeInvalidRequest, err.Error())
 	}
 	obj, ok := v.(map[string]any)
 	if !ok {
-		return http.StatusOK, errorFrame(CodeInvalidRequest, "a frame must be a JSON object")
+		return http.StatusOK, nil, errorFrame(CodeInvalidRequest, "a frame must be a JSON object")
 	}
-	method, _ := obj["method"].(string)
-	switch method {
-	case "hello":
-		return http.StatusOK, mustCanonical(map[string]any{
+	return http.StatusOK, obj, nil
+}
+
+// stateless answers the methods that need no state: hello, else a refusal.
+func stateless(obj map[string]any) []byte {
+	if m, _ := obj["method"].(string); m == "hello" {
+		return mustCanonical(map[string]any{
 			"proto":   []any{json.Number(fmt.Sprint(RPCMin)), json.Number(fmt.Sprint(RPCVersion))},
 			"version": Version,
 			"pid":     json.Number(fmt.Sprint(os.Getpid())),
 		})
-	default:
-		return http.StatusOK, errorFrame(CodeInvalidRequest, "unknown or unsupported method")
 	}
+	return errorFrame(CodeInvalidRequest, "unknown or unsupported method")
+}
+
+// Handle answers one frame without state: hello, and refusals for the rest.
+func Handle(frame string) (int, []byte) {
+	status, obj, body := parseFrame(frame)
+	if obj == nil {
+		return status, body
+	}
+	return http.StatusOK, stateless(obj)
 }
 
 func errorFrame(code, msg string) []byte {
@@ -83,8 +94,13 @@ func mustCanonical(v any) []byte {
 	return b
 }
 
-// Factory builds the backend for Bao's plugin machinery.
+// Factory builds the backend for Bao's plugin machinery, with a default-deny engine.
 func Factory(ctx context.Context, conf *logical.BackendConfig) (logical.Backend, error) {
+	return NewEngine().Backend(ctx, conf)
+}
+
+// Backend wires this engine into a framework backend.
+func (e *Engine) Backend(ctx context.Context, conf *logical.BackendConfig) (logical.Backend, error) {
 	b := &framework.Backend{
 		BackendType: logical.TypeLogical,
 		Help:        "Tracekit signer RPC over one string field.",
@@ -94,7 +110,7 @@ func Factory(ctx context.Context, conf *logical.BackendConfig) (logical.Backend,
 				"frame": {Type: framework.TypeString, Description: "One Tracekit RPC frame, as JSON text."},
 			},
 			Operations: map[logical.Operation]framework.OperationHandler{
-				logical.UpdateOperation: &framework.PathOperation{Callback: pathRPC},
+				logical.UpdateOperation: &framework.PathOperation{Callback: e.pathRPC},
 			},
 		}},
 	}
@@ -104,7 +120,7 @@ func Factory(ctx context.Context, conf *logical.BackendConfig) (logical.Backend,
 	return b, nil
 }
 
-func pathRPC(_ context.Context, _ *logical.Request, d *framework.FieldData) (*logical.Response, error) {
+func (e *Engine) pathRPC(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
 	raw, ok := d.GetOk("frame")
 	if !ok {
 		return nil, logical.ErrInvalidRequest // non-200: no frame
@@ -113,7 +129,12 @@ func pathRPC(_ context.Context, _ *logical.Request, d *framework.FieldData) (*lo
 	if !ok {
 		return nil, logical.ErrInvalidRequest
 	}
-	status, body := Handle(frame)
+	// Identity comes from Bao, never from the frame. A plain token has no entity: refused.
+	var id *Identity
+	if req.EntityID != "" {
+		id = &Identity{Scheme: "bao-entity", Subject: req.EntityID}
+	}
+	status, body := e.Serve(ctx, req.Storage, id, frame)
 	return &logical.Response{Data: map[string]interface{}{
 		logical.HTTPContentType: "application/json",
 		logical.HTTPStatusCode:  status,
