@@ -211,3 +211,20 @@ The frontier-learning record: what was tried, whether the level's pass rate rose
     L1-L5 engine: frames, runs, atomicity     51/51  1.000
     L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
     L5 export: .tkb (strict zip)               9/9   1.000
+
+## Iteration 18: export a closed run as a .tkb that upstream verify accepts (step f2c)
+
+- Measured: `Engine.Export` builds the bundle files for one closed run: its records verbatim, the `signer.epoch` key records, inclusion proofs over the whole log for the run's first and last record and every key record, and a checkpoint signed by the log key, with origin `LogOrigin()`. `TestExportVerifiesUpstream` writes `trust.json` (the log vkey, `algs` ed25519, `witnesses_required` 0) to a temp dir and runs upstream `tracekit verify --trust` with PYTHONPATH set explicitly.
+- Measured, clean: the export passes upstream verify. The test requires exit 0 and the line `Integrity: VERIFIED.`.
+- Measured, tamper: one value in the run.registered record was changed, and that file's manifest hash was recomputed. Upstream rejects it with a non-zero exit and `[FAIL] signatures` naming `seq 1: hash does not match the event`. The run chain also fails at run_seq 1 onward.
+- Inferred, not measured: the requirement from the plan was `[FAIL] chain intact`. This verifier does not use that name for this edit; the golden fixture used it for a different edit. The assertion now requires the signatures line and the seq, which identifies the same record.
+- Not done: open runs (refused), run-sets, rekor/tsa anchors, policies, witnesses, and the bundle is not yet produced over HTTP (f3). Monitor and issuer checks are not configured in trust.json.
+- Result: frontier exit 0 with the Tracekit environment set:
+    L0 format: JCS                             1/1   1.000
+    L0 format: records                        13/13  1.000
+    L0 format: tree                            5/5   1.000
+    L0 format: checkpoints                    16/16  1.000
+    L1 transport: proxy                       11/11  1.000
+    L1-L5 engine: frames, runs, atomicity     52/52  1.000
+    L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
+    L5 export: .tkb (strict zip)               9/9   1.000

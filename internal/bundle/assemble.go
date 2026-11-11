@@ -46,6 +46,11 @@ func jsonl(lines []string) ([]byte, error) {
 // used verbatim), keys/records.jsonl, and manifest.json listing each file's SHA-256.
 // The output does not verify on its own: proofs and a checkpoint are still missing.
 func Assemble(runs map[string][]string, keys []string) ([]File, error) {
+	return AssembleWith(runs, keys, nil)
+}
+
+// AssembleWith is Assemble plus extra files (checkpoints, proofs), listed in the manifest.
+func AssembleWith(runs map[string][]string, keys []string, extra []File) ([]File, error) {
 	var files []File
 	names := make([]string, 0, len(runs))
 	for n := range runs {
@@ -65,6 +70,7 @@ func Assemble(runs map[string][]string, keys []string) ([]File, error) {
 	}
 	files = append(files, File{Name: "keys/records.jsonl", Data: keyData})
 
+	files = append(files, extra...)
 	listed := make(map[string]string, len(files))
 	for _, f := range files {
 		sum := sha256.Sum256(f.Data)
