@@ -27,6 +27,7 @@ func TestEveryRecordPassesUpstream(t *testing.T) {
 	if allow["decision"] != "allow" || deny["decision"] != "deny" {
 		t.Fatalf("setup: %v %v", allow, deny)
 	}
+	r.call(alice, consumeFrame(runID, tok, "c2", "rm", "{}"))
 	digest := argsDigest(t, "bash", "{}")
 	done := r.call(alice, `{"method":"complete","request_id":"k1","run_id":"`+runID+`","run_token":"`+tok+
 		`","stream":"s","client_seq":2,"tool_call_id":"c1","decision_id":"`+allow["decision_id"].(string)+

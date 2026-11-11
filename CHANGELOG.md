@@ -136,3 +136,17 @@ The frontier-learning record: what was tried, whether the level's pass rate rose
     L1-L5 engine: frames, runs, atomicity     48/48  1.000
     L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
     L5 export: .tkb (strict zip)               4/4   1.000
+
+## Iteration 13: refused consume is schema-checked
+
+- Gap closed: the `approval.refused` record from iteration 9 was not validated against the upstream schema. `TestEveryRecordPassesUpstream` now runs a refused `approval_consume` on the denied call, so the record is checked with `ValidateEvent` and `VerifyRecord`. `run.closing` was already covered by that test through `close_run`.
+- Before: not measured (the record was never in the checked set).
+- Result: `TestEveryRecordPassesUpstream` passes. Frontier exit 0 with the Tracekit environment set:
+    L0 format: JCS                             1/1   1.000
+    L0 format: records                        13/13  1.000
+    L0 format: tree                            5/5   1.000
+    L0 format: checkpoints                    16/16  1.000
+    L1 transport: proxy                       11/11  1.000
+    L1-L5 engine: frames, runs, atomicity     48/48  1.000
+    L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
+    L5 export: .tkb (strict zip)               4/4   1.000
