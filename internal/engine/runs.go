@@ -381,11 +381,11 @@ func (e *Engine) Serve(ctx context.Context, s logical.Storage, id *Identity, fra
 		sp, rerr = e.register(obj, id)
 		sps = []spec{sp}
 	case "decide":
-		pol, perr := e.policyFor(ctx, s)
+		pol, ph, perr := e.policyFor(ctx, s)
 		if perr != nil {
 			return http.StatusOK, errorFrame(CodeUnavailable, "the signer policy cannot be read")
 		}
-		sps, rerr = e.decide(obj, id, pol)
+		sps, rerr = e.decide(obj, id, pol, ph)
 	case "complete":
 		var sp spec
 		sp, rerr = e.complete(obj, id)
@@ -460,7 +460,7 @@ func (e *Engine) commitment(label, saltID, digest string) string {
 	return "hmac-sha256:" + hex.EncodeToString(m.Sum(nil))
 }
 
-func (e *Engine) decide(obj map[string]any, id *Identity, pol Policy) ([]spec, *rpcErr) {
+func (e *Engine) decide(obj map[string]any, id *Identity, pol Policy, policyHash string) ([]spec, *rpcErr) {
 	if err := need(obj, "run_id", "run_token", "stream", "client_seq", "tool_call_id", "tool", "args_source", "args"); err != nil {
 		return nil, err
 	}
@@ -539,7 +539,7 @@ func (e *Engine) decide(obj map[string]any, id *Identity, pol Policy) ([]spec, *
 	extra := map[string]any{"args_source": src, "attempt": attempt, "tool_call_id": callID, "tenant_attested": false}
 	decisionSpec := spec{
 		run: r, typ: "policy.decision", source: "sdk", toolCallID: callID, decisionID: did, decision: decision, argsDigest: digest,
-		data:  map[string]any{"tool_use_id": callID, "decision": decision, "rule_ids": ruleIDs, "tool": tool, "decision_id": did},
+		data:  map[string]any{"tool_use_id": callID, "decision": decision, "rule_ids": ruleIDs, "tool": tool, "decision_id": did, "policy_hash": policyHash},
 		extra: extra,
 		resp: func(runSeq int) map[string]any {
 			return map[string]any{"decision": decision, "decision_id": did, "rule_ids": ruleIDs, "run_seq": num(runSeq)}

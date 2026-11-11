@@ -102,3 +102,18 @@ The frontier-learning record: what was tried, whether the level's pass rate rose
     L1 transport: proxy                       11/11  1.000
     L1-L5 engine: frames, runs, atomicity     47/47  1.000
     L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
+
+## Iteration 11: policy_hash on policy.decision
+
+- Problem: `policy.decision` carried no `policy_hash`, so a decision could not be tied to the policy it was made under.
+- Before: `TestDecisionCarriesPolicyHash` failed with `policy_hash ""`.
+- Change: `policyFor` returns the hash with the policy: `sha256:` plus SHA-256 of the JCS of the stored allow list (of the raw bytes when the stored value does not parse). `decide` writes it into `policy.decision` data.
+- Not covered: no stored policy hashes `{"allow":[]}`. The engine's own `Policy` function has no canonical form, so a test policy is not reflected in the hash. Approval records do not carry `policy_hash` yet. No `policies/<sha256>.json` snapshot is written; the v2 export in step (f) needs one.
+- Result: frontier exit 0 with the Tracekit environment set:
+    L0 format: JCS                             1/1   1.000
+    L0 format: records                        13/13  1.000
+    L0 format: tree                            5/5   1.000
+    L0 format: checkpoints                    16/16  1.000
+    L1 transport: proxy                       11/11  1.000
+    L1-L5 engine: frames, runs, atomicity     48/48  1.000
+    L2-L3 e2e: identity and scope (real Bao)  10/10  1.000

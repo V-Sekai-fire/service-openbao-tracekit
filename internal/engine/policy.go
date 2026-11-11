@@ -49,32 +49,37 @@ func parseStored(b []byte) ([]string, error) {
 	return out, nil
 }
 
-// policyFor returns the policy for one decide. A stored policy wins; with none stored,
-// the engine's own Policy applies (DenyAll by default). A storage read error is returned
-// so the caller refuses the call rather than guessing. A stored value that does not
-// parse as the one shape is TK-POLICY-INVALID, which denies.
-func (e *Engine) policyFor(ctx context.Context, s logical.Storage) (Policy, error) {
+// policyFor returns the policy for one decide and its policy_hash: "sha256:" plus the
+// SHA-256 of the JCS of the stored allow list, or of the raw bytes when the stored value does
+// not parse. With none stored, the engine's own Policy applies and the hash is that of an empty
+// allow list: the Policy function has no canonical form, so it is not reflected in the hash.
+// A storage read error is returned so the caller refuses the call rather than guessing.
+// A stored value that does not parse as the one shape is TK-POLICY-INVALID, which denies.
+func (e *Engine) policyFor(ctx context.Context, s logical.Storage) (Policy, string, error) {
 	ent, err := s.Get(ctx, policyKey)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if ent == nil {
-		return e.Policy, nil
+		return e.Policy, jcs.SHA256Hex(mustCanonical(map[string]any{"allow": []any{}})), nil
 	}
 	list, err := parseStored(ent.Value)
 	if err != nil {
-		return invalidPolicy, nil
+		return invalidPolicy, jcs.SHA256Hex(ent.Value), nil
 	}
 	allowed := make(map[string]bool, len(list))
+	anyList := make([]any, 0, len(list))
 	for _, t := range list {
 		allowed[t] = true
+		anyList = append(anyList, t)
 	}
+	ph := jcs.SHA256Hex(mustCanonical(map[string]any{"allow": anyList}))
 	return func(tool string) (string, []string) {
 		if allowed[tool] {
 			return "allow", []string{"TK-STORED-ALLOW"}
 		}
 		return "deny", []string{"TK-STORED-DENY"}
-	}, nil
+	}, ph, nil
 }
 
 // policyPath is the operator's path to write and read the allow list.
