@@ -319,3 +319,19 @@ The frontier-learning record: what was tried, whether the level's pass rate rose
     L1-L5 engine: frames, runs, atomicity     57/57  1.000
     L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
     L5 export: .tkb (strict zip)               9/9   1.000
+
+## Iteration 25: measured state layout (step 3b-i, sub-step a)
+
+- Test: `TestStateWorstCaseFits` (internal/engine/state_layout_test.go) fills the caps: 64 runs x 8 calls, 512 ring entries, IDs at 128 bytes. The 128-byte cap is the one the user chose after the upstream schema limit (rpc_schema.py `ID` = 128) was shown; the 64-byte cap in the plan is superseded.
+- Result: the largest 8-run or 64-entry shard is 30,017 bytes against a 92,160-byte budget (about 90 KiB, under FDB's ~100 KB value limit). A single value holding all runs and ring entries would be 471,315 bytes, so the layout must be sharded. Decision: fixed shard keys, read and written on every request.
+- Limitation, stated plainly: the test encodes model structs, not the production state types. The production encoding is measured again in sub-step (b), when the state is written through the transaction; the budget check then applies to production bytes.
+- Not changed: the engine's behaviour, storage keys and export. `constant_work_test.go` and `TestStorageHoldsOnlyNamedKeys` remain outside the tree until their steps.
+- Result: frontier exit 0 with the Tracekit environment set:
+    L0 format: JCS                             1/1   1.000
+    L0 format: records                        13/13  1.000
+    L0 format: tree                            5/5   1.000
+    L0 format: checkpoints                    16/16  1.000
+    L1 transport: proxy                       11/11  1.000
+    L1-L5 engine: frames, runs, atomicity     58/58  1.000
+    L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
+    L5 export: .tkb (strict zip)               9/9   1.000
