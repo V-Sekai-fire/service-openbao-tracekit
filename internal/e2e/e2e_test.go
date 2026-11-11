@@ -275,6 +275,8 @@ func TestIdentityAndScope(t *testing.T) {
 			{"POST", "/v1/auth/token/create"},
 			{"GET", "/v1/sys/plugins/catalog"},
 			{"POST", "/v1/tracekit/other"},
+			{"GET", "/v1/tracekit/trust"},
+			{"GET", "/v1/tracekit/runs/default/x/export"},
 			{"POST", "/v1/sys/seal"},
 		} {
 			if st, _ := s.do(t, c.method, c.path, alice1, map[string]any{}); st != 403 && st != 404 {

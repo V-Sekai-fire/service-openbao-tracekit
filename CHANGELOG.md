@@ -258,3 +258,17 @@ The frontier-learning record: what was tried, whether the level's pass rate rose
     L1-L5 engine: frames, runs, atomicity     56/56  1.000
     L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
     L5 export: .tkb (strict zip)               9/9   1.000
+
+## Iteration 21: agent token gets 403 on export and trust (ACL)
+
+- Measured through real `bao server -dev`: the scoped agent token (policy: `update` on `tracekit/rpc` only) is refused on `GET tracekit/trust` and `GET tracekit/runs/default/x/export`. `TestIdentityAndScope/the_scoped_token_reaches_nothing_else` checks these with the existing 403-or-404 rule.
+- Not done: a separate operator policy for export and trust. Export and trust are reachable only by a token granted those paths, and none is granted to the agent. The operator path itself is not yet exercised end to end; that is part of the end-to-end test.
+- Result: frontier exit 0 with the Tracekit environment set:
+    L0 format: JCS                             1/1   1.000
+    L0 format: records                        13/13  1.000
+    L0 format: tree                            5/5   1.000
+    L0 format: checkpoints                    16/16  1.000
+    L1 transport: proxy                       11/11  1.000
+    L1-L5 engine: frames, runs, atomicity     56/56  1.000
+    L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
+    L5 export: .tkb (strict zip)               9/9   1.000
