@@ -329,7 +329,7 @@ func (e *Engine) Serve(ctx context.Context, s logical.Storage, id *Identity, fra
 	}
 	method, _ := obj["method"].(string)
 	switch method {
-	case "register_run", "decide", "complete", "close_run":
+	case "register_run", "decide", "complete", "close_run", "approval_consume":
 	default:
 		return http.StatusOK, stateless(obj)
 	}
@@ -352,6 +352,9 @@ func (e *Engine) Serve(ctx context.Context, s logical.Storage, id *Identity, fra
 	if err := e.ensure(ctx, s); err != nil {
 		e.loaded = false
 		return http.StatusOK, errorFrame(CodeUnavailable, "the signer log cannot be read or written")
+	}
+	if method == "approval_consume" {
+		return http.StatusOK, e.consume(obj, id)
 	}
 	canon, err := jcs.Canonical(obj)
 	if err != nil {
