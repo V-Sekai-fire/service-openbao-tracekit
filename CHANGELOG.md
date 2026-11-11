@@ -242,3 +242,19 @@ The frontier-learning record: what was tried, whether the level's pass rate rose
     L1-L5 engine: frames, runs, atomicity     53/53  1.000
     L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
     L5 export: .tkb (strict zip)               9/9   1.000
+
+## Iteration 20: export and trust read paths (step f3, part 1)
+
+- Added: `runs/<tenant>/<run_id>/export` (read) returns `bundle.Write(Export(...))` as `application/zip` through `HTTPRawBody`. An open or unknown run returns 409 with an error frame. `trust` (read) returns only `logs`, `algs` and `witnesses_required`, with the log's public verification key.
+- Measured in process: the export body is byte-equal to `bundle.Write(Export(...))`; an open run is refused with 409 and no zip; the trust response has exactly three keys and `logs[0]` equals `VKey(LogOrigin(), ed25519, LogPublicKey())`.
+- Not measured: the ACL. The agent token must get 403 on both paths; that extension to the e2e test is the next step. Not measured through real Bao yet.
+- Not measured: `TestExportVerifiesUpstream` is skipped unless the Tracekit environment is set; the frontier run had it set.
+- Result: frontier exit 0 with the Tracekit environment set:
+    L0 format: JCS                             1/1   1.000
+    L0 format: records                        13/13  1.000
+    L0 format: tree                            5/5   1.000
+    L0 format: checkpoints                    16/16  1.000
+    L1 transport: proxy                       11/11  1.000
+    L1-L5 engine: frames, runs, atomicity     56/56  1.000
+    L2-L3 e2e: identity and scope (real Bao)  10/10  1.000
+    L5 export: .tkb (strict zip)               9/9   1.000

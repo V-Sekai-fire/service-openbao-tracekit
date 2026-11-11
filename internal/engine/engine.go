@@ -104,7 +104,7 @@ func (e *Engine) Backend(ctx context.Context, conf *logical.BackendConfig) (logi
 	b := &framework.Backend{
 		BackendType: logical.TypeLogical,
 		Help:        "Tracekit signer RPC over one string field.",
-		Paths: []*framework.Path{e.policyPath(), {
+		Paths: []*framework.Path{e.policyPath(), e.exportPath(), e.trustPath(), {
 			Pattern: "rpc",
 			Fields: map[string]*framework.FieldSchema{
 				"frame": {Type: framework.TypeString, Description: "One Tracekit RPC frame, as JSON text."},
