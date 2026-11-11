@@ -25,7 +25,11 @@ try:
         out["decision"] = d.get("decision")
         out["unavailable"] = d.get("unavailable", False)
         digest = event_hash({"tool": "bash", "args": loads_strict(args)})
-        out["complete"] = run.complete("c1", status="error", decision_id=d.get("decision_id"), args_digest=digest)
+        if os.environ.get("CHECK_MODE") == "allow":
+            out["consume"] = run.approval_consume("c1", "bash", args)
+            out["complete"] = run.complete("c1", status="ok", decision_id=d.get("decision_id"), args_digest=digest)
+        else:
+            out["complete"] = run.complete("c1", status="error", decision_id=d.get("decision_id"), args_digest=digest)
         run.close()
         out["closed"] = run.closed
         out["warnings"] = [str(w.message)[:300] for w in caught]

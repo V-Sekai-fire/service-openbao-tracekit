@@ -12,8 +12,9 @@ Done and measured (`go run ./cmd/frontier`, no arguments):
 - The `rpc` path (one string field, raw reply), `hello`, `register_run`, `decide`, `complete` and `close_run`, with a default-deny policy.
 - Identity from Bao's entity id, checked through a real dev server. Frames cannot name their own caller or principal.
 - `tkbao-proxy`: maps the client's `POST /v2/rpc` onto the engine and returns no frame on any Bao failure.
+- A stored allow list (operator-written, default deny) and `approval_consume` for allowed calls, checked by the real v1.4.2 client.
 
-Not done: a real policy, `.tkb` export, event-schema validation of every record, a production login method, and the cutover from the live signer. See `CHANGELOG.md` and `docs/shim.md`.
+Not done: a complete policy (the stored allow list is not in the signed log and decisions carry no `policy_hash`), approval requests and refusal records, `attempt` binding, `.tkb` export, event-schema validation of every record, a production login method, and the cutover from the live signer. See `CHANGELOG.md` and `docs/shim.md`.
 
 ## Rules
 

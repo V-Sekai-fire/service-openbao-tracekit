@@ -45,3 +45,13 @@ The frontier-learning record: what was tried, whether the level's pass rate rose
 - Change: the engine computes the client's digest. Raw args that do not parse strictly are denied as `TK-ARGS-INVALID` and bound by the hash of their text.
 - Result: engine 30/30, e2e 8/8, nothing below dropped. Kept.
 - Not tested: an allow decision against the real client (the default policy denies everything), `ask` and `approval_consume`, which the Hermes hook calls; `run.closing`; the `.tkb` export.
+
+## Iteration 3: stored allow policy and approval_consume
+
+- Level: L2 authorisation, L4 approval (`approval_consume`, allow and deny only), and the real v1.4.2 client with an allowed call.
+- Tried: an operator-written allow list in Bao storage (`policy` path, read and write guarded by Bao's ACL). With none stored the default deny applies. A stored value must parse strictly as `{"allow": [non-empty strings]}`; anything else is `TK-POLICY-INVALID`, which denies. A write without `allow` is refused. A storage read error answers `unavailable` and writes nothing.
+- Tried: `approval_consume` for a call the engine decided. It is read-only: an allow decision whose arguments match the decided ones returns `ok: true`; a denied, unknown, or argument-mismatched call is refused with `TK-APPROVAL-REQUIRED` or `TK-APPROVAL-MISMATCH`. It writes no record, so a replay gets the same answer.
+- Found: the first real-client allow run failed on `args_digest` until the engine computed the client's digest (iteration 2, commit 0e28535). The allow path is now exercised end to end with the unmodified v1.4.2 client.
+- Found and fixed by test: stored policies with trailing data, duplicate keys, extra keys, or a non-array `allow` were accepted; they now deny with `TK-POLICY-INVALID`.
+- Kept: yes. Measured with `go run ./cmd/frontier` and the tools interpreter: L1-L5 45/45, L2-L3 real Bao 10/10, real-client allow passes. One earlier frontier run reported `TestRealClientAllow` failing (9/10); it did not reproduce in about 30 repeated runs. Cause not found.
+- Not done: refusal records (`approval.refused`) are not written, so a refused consume leaves no trace in the signed log. `attempt` is not yet bound: local `decide` defaults it to 1 while upstream defaults to 0 and the client never sends it. Policy writes are not in the signed log and decisions carry no `policy_hash`. `approval_request`, `approval_decide`, and `ask` are not implemented.
